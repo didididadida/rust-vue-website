@@ -66,8 +66,8 @@
         <div class="recent-info">
           <code class="url-text">{{ getFullUrl(img.url) }}</code>
           <div class="recent-actions">
-            <button class="btn-sm btn" @click="copyUrl(getFullUrl(img.url))">📋 复制链接</button>
-            <button class="btn-sm btn" @click="copyMarkdown(getFullUrl(img.url), img.filename)">📝 复制 Markdown</button>
+            <el-button size="small" @click="copyUrl(getFullUrl(img.url))">📋 复制链接</el-button>
+            <el-button size="small" @click="copyMarkdown(getFullUrl(img.url), img.filename)">📝 复制 Markdown</el-button>
           </div>
         </div>
       </div>
@@ -78,25 +78,25 @@
       <div class="section-header">
         <h2>已上传图片</h2>
         <div class="header-tools">
-          <button
-            type="button"
-            :class="['filter-btn', { active: onlyMine }]"
-            @click="toggleOnlyMine"
-          >{{ onlyMine ? '只看我的' : '全部图片' }}</button>
-          <button class="btn btn-outline" @click="loadImages" :disabled="loading">
+          <el-button :type="onlyMine ? 'primary' : 'default'" @click="toggleOnlyMine">
+            {{ onlyMine ? '只看我的' : '全部图片' }}
+          </el-button>
+          <el-button :loading="loading" @click="loadImages">
             {{ loading ? '加载中...' : '🔄 刷新' }}
-          </button>
+          </el-button>
         </div>
       </div>
 
-      <div v-if="loading" class="loading">加载中...</div>
+      <div v-if="loading" class="loading">
+        <el-skeleton :rows="3" animated />
+      </div>
       <div v-else-if="visibleImages.length === 0" class="empty">
-        <p>{{ onlyMine ? '你还没有上传过图片' : '还没有上传过图片' }}</p>
+        <el-empty :description="onlyMine ? '你还没有上传过图片' : '还没有上传过图片'" />
       </div>
       <div v-else class="image-grid">
         <div v-for="img in visibleImages" :key="img.filename" class="image-card">
           <div class="image-preview" @click="previewImage = img">
-            <img :src="thumbOf(img)" :alt="img.filename" loading="lazy" />
+            <el-image :src="thumbOf(img)" :alt="img.filename" fit="cover" lazy />
             <span v-if="img.is_video" class="video-badge">▶</span>
           </div>
           <div class="image-info">

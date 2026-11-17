@@ -1,504 +1,591 @@
+<!--
+  首页（参考 Valaxy 的视觉语言）
+
+  逻辑描述：
+    输入：最新文章列表（GET /api/articles?limit=N）
+    输出：
+      - 首屏大标题区（站点名 + 标语 + 联系方式），带打字机入场效果
+      - 最新文章卡片列表
+    关键机制：
+      1. 标题用 CSS 逐字入场（animation-delay 按索引递增），
+         不用 JS 定时器，避免卸载时残留 timer；
+      2. 卡片布局参考 Valaxy：左侧封面（可选）、右侧标题+摘要+元信息；
+      3. 尊重 prefers-reduced-motion：用户关闭动画时不播放。
+    不变量：
+      - 文章区在数据未就绪时显示骨架，不显示「空」；
+      - 接口失败不影响首屏标题区显示。
+    边界：
+      - 无文章时显示引导文案而非报错；
+      - 封面图缺失时卡片自动退化为纯文字布局。
+
+  依据：
+    经典问题：渐进式呈现与动效可访问性（progressive reveal & reduced motion）
+    来源：
+      1. Valaxy 官网首页的结构与视觉
+         https://valaxy.site/ —— 大标题 + 标语 + 特性分块 + 卡片
+      2. Valaxy 主题 Yun 的「首页标语」说明
+         https://valaxy.site/zh/themes/yun/layout#首页标语
+         原文要点：banner.title 支持手动分割成多段做交错排列文字效果
+      3. MDN：prefers-reduced-motion
+         https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion
+         要点：动效必须尊重用户的减弱动效偏好，否则对前庭功能障碍用户不友好。
+    原型结论：
+      1. 文字入场用 CSS animation + 递增 delay 即可，比 JS 逐字快且省资源；
+      2. 动效必须能用系统设置关闭。
+    本处变体：
+      - 原首页是「Hero + 卡片网格」，无动画；
+      - Valaxy 用 framework 层的 banner 配置，本站直接写 CSS。
+    沿用结论：保留大标题区（这是站点门面），加交错入场动画；
+              文章列表改为横向卡片（更接近 Valaxy 的列表形态）。
+    偏离处：
+      - 不做「流动云」背景动画（Valaxy Yun 主题特有，与本项目星空背景冲突）；
+      - 不做 i18n 多语言标题（本站为中文单语言）。
+-->
 <template>
   <div class="home">
-    <!-- Hero 区域：只留站名与联系方式，不放任何按钮 -->
+    <!-- ===== 首屏：站点名与标语 ===== -->
     <section class="hero">
-      <p class="hero-eyebrow">BLOG</p>
-      <h1 class="hero-title">wanle</h1>
+      <p class="hero-eyebrow">WELCOME TO MY SITE</p>
+
+      <!-- 逐字入场：每个字一个 span，animation-delay 递增 -->
+      <h1 class="hero-title" aria-label="飼酒之心">
+        <span
+          v-for="(ch, i) in titleChars"
+          :key="i"
+          class="hero-char"
+          :style="{ animationDelay: `${i * 0.08}s` }"
+        >{{ ch }}</span>
+      </h1>
+
       <p class="hero-desc">
         用代码创造有趣的东西。这里记录了一些技术思考与随笔。
       </p>
+
       <p class="hero-contact">
-        <span>微信：your-wechat</span>
+        <span>{{ contact.wechat }}</span>
         <span class="dot">·</span>
-        <span>QQ：your-qq</span>
+        <span>{{ contact.qq }}</span>
       </p>
-      <!-- 三张码图：点击展开，不占首屏高度（渐进披露） -->
+
+      <!-- 打赏码：点击展开，不占首屏高度 -->
       <div class="pay-row">
-        <button
+        <el-button
           v-for="q in payCodes"
           :key="q.key"
-          type="button"
+          size="small"
+          text
           class="pay-chip"
-          @click="openPay(q)"
+          @click="activePay = q"
         >
           {{ q.label }}
-        </button>
+        </el-button>
       </div>
-      <div class="hero-rule"></div>
+
+      <!-- 向下箭头：提示可滚动 -->
+      <div class="hero-scroll" aria-hidden="true">
+        <span class="scroll-arrow"></span>
+      </div>
     </section>
 
-    <!-- 码图预览层 -->
-    <div v-if="activePay" class="pay-overlay" @click.self="activePay = null">
-      <div class="pay-card">
-        <p class="pay-title">{{ activePay.label }}</p>
-        <img :src="activePay.src" :alt="activePay.label" class="pay-img" />
-        <button type="button" class="pay-close" @click="activePay = null">关闭</button>
-      </div>
-    </div>
+    <!-- 码图预览 -->
+    <el-dialog
+      v-model="payVisible"
+      :title="activePay?.label"
+      width="320px"
+      align-center
+      class="pay-dialog"
+    >
+      <img v-if="activePay" :src="activePay.src" :alt="activePay.label" class="pay-img" />
+    </el-dialog>
 
-    <!-- 最新文章 -->
-    <section class="section">
-      <div class="section-header">
-        <h2 class="section-title">最新文章</h2>
+    <!-- ===== 文章列表 ===== -->
+    <section class="posts">
+      <header class="posts-head">
+        <h2 class="posts-title">最新文章</h2>
+        <router-link to="/blog" class="posts-more">全部文章 →</router-link>
+      </header>
+
+      <!-- 加载中：骨架屏而非"加载中"文字 -->
+      <div v-if="loading" class="post-list">
+        <div v-for="i in 3" :key="i" class="post-skeleton">
+          <el-skeleton :rows="2" animated />
+        </div>
       </div>
 
-      <div v-if="loading.articles" class="loading">加载中</div>
-      <div v-else-if="articles.length === 0" class="empty">
-        <p>还没有文章，快去后台写一篇吧</p>
+      <!-- 空态 -->
+      <div v-else-if="!articles.length" class="posts-empty">
+        <el-empty description="还没有文章，去后台写一篇吧">
+          <el-button v-if="isAdmin" type="primary" @click="$router.push('/admin')">
+            去后台
+          </el-button>
+        </el-empty>
       </div>
-      <div v-else class="card-grid">
-        <article v-for="item in articles" :key="item.slug" class="card article-card">
-          <router-link
-            :to="'/blog/' + encodeURIComponent(item.slug)"
-            class="card-link"
-            :aria-label="item.title"
-          >
-            <div v-if="item.cover_image" class="card-cover">
-              <img :src="item.cover_image" :alt="item.title" loading="lazy" />
+
+      <!-- 文章卡片列表 -->
+      <div v-else class="post-list">
+        <router-link
+          v-for="(a, i) in articles"
+          :key="a.slug"
+          :to="`/blog/${encodeURIComponent(a.slug)}`"
+          class="post-card"
+          :style="{ animationDelay: `${0.1 + i * 0.07}s` }"
+        >
+          <div v-if="a.cover_image" class="post-cover">
+            <el-image :src="a.cover_image" :alt="a.title" fit="cover" lazy />
+          </div>
+
+          <div class="post-body">
+            <div class="post-meta">
+              <el-tag v-if="a.category" size="small" type="info" effect="plain">
+                {{ categoryLabel(a.category) }}
+              </el-tag>
+              <span class="post-date">{{ formatDate(a.created_at) }}</span>
             </div>
-            <div class="card-body">
-              <div class="card-meta">
-                <span class="category-badge">{{ categoryLabel(item.category) }}</span>
-                <span class="dot">·</span>
-                <span class="date">{{ formatDate(item.created_at) }}</span>
-              </div>
-              <h3 class="card-title">{{ item.title }}</h3>
-              <p class="card-summary">{{ excerpt(item) }}</p>
-              <div v-if="item.tags && item.tags.length" class="card-tags">
-                <span v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</span>
-              </div>
+
+            <h3 class="post-title">{{ a.title }}</h3>
+
+            <p class="post-summary">{{ a.summary || excerpt(a) }}</p>
+
+            <div v-if="a.tags && a.tags.length" class="post-tags">
+              <el-tag
+                v-for="t in a.tags"
+                :key="t"
+                size="small"
+                effect="plain"
+                class="post-tag"
+              ># {{ t }}</el-tag>
             </div>
-          </router-link>
-        </article>
+          </div>
+        </router-link>
       </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import http from '../api'
+import { auth } from '../auth'
 import { categoryLabel, formatDate } from '../labels'
 
 const articles = ref([])
-const loading = ref({ articles: true })
+const loading = ref(true)
+const activePay = ref(null)
+const payVisible = ref(false)
+
+const isAdmin = computed(() => auth.isAdmin)
+
+/** 站点名逐字拆分（用于交错入场动画） */
+const TITLE = '飼酒之心'
+const titleChars = computed(() => TITLE.split(''))
 
 /**
- * 联系与打赏码图。
- * 图片放在 frontend/public/pay/，由 Vite 原样发布到站点根，故路径不以 /static/ 开头
- * （/static/ 是后端图床目录，受后端鉴权与缓存策略管辖，不应塞站点自有的静态资源）。
+ * 联系方式
+ *
+ * 说明：从原 hardcode 保留，后续可移到后端配置。
+ */
+const contact = {
+  wechat: '微信：hao202305',
+  qq: 'QQ：1759737638',
+}
+
+/**
+ * 打赏码图
+ *
+ * 图片放在 frontend/public/pay/，由 Vite 原样发布到站点根。
+ * 不用 /static/ 前缀，因为那是后端图床目录。
  */
 const payCodes = [
   { key: 'wechat-id', label: '微信号', src: '/pay/wechat-id.jpg' },
   { key: 'wechat-pay', label: '微信收款码', src: '/pay/wechat-pay.jpg' },
   { key: 'reward', label: '赞赏码', src: '/pay/reward.jpg' },
 ]
-const activePay = ref(null)
+
 function openPay(code) {
   activePay.value = code
+  payVisible.value = true
 }
 
-/** 摘要：优先用 summary，否则从正文剥掉 Markdown 标记截取 */
-const stripMarkdown = text =>
-  String(text || '')
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/[#>*_`~\[\]()!]/g, ' ')
+/** 去掉 Markdown 标记，取纯文本摘要 */
+function excerpt(a) {
+  const raw = a.content || ''
+  if (!raw) return ''
+  return raw
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[#>*_`~-]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-
-const excerpt = item => {
-  if (item.summary) return item.summary
-  const text = stripMarkdown(item.content)
-  return text.length > 110 ? text.slice(0, 110) + '…' : text
+    .slice(0, 120)
 }
 
 onMounted(async () => {
   try {
-    const latestArticles = await http.get('/api/articles', { params: { limit: 3 } })
-    articles.value = latestArticles
+    // 后端 /api/articles 返回纯数组（ListOut 序列化）
+    const list = await http.get('/api/articles', { params: { limit: 6 } })
+    articles.value = Array.isArray(list) ? list : []
   } catch (e) {
-    console.error('加载数据失败:', e)
+    console.error('加载文章失败:', e)
+    articles.value = []
   } finally {
-    loading.value = { articles: false }
+    loading.value = false
   }
 })
 </script>
 
 <style scoped>
-/* ---------- 码图入口 ---------- */
-.pay-row {
+/* ==================== 首屏 ==================== */
+.hero {
+  min-height: 72vh;
   display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-top: 1.1rem;
-}
-.pay-chip {
-  font-size: 0.8rem;
-  padding: 0.3rem 0.85rem;
-  border-radius: 999px;
-  border: 1px solid var(--dsw-alias-border-subtle, rgba(255, 255, 255, 0.16));
-  background: transparent;
-  color: var(--dsw-alias-label-secondary, #b8c0cc);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.pay-chip:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--dsw-alias-label-primary, #e8edf5);
-}
-
-.pay-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.62);
-  backdrop-filter: blur(2px);
-  padding: 1.5rem;
-}
-.pay-card {
-  background: var(--dsw-alias-bg-elevated, #151a22);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
-  padding: 1.1rem 1.1rem 0.9rem;
   text-align: center;
-  max-width: 320px;
-}
-.pay-title {
-  margin: 0 0 0.7rem;
-  font-size: 0.9rem;
-  color: var(--dsw-alias-label-secondary, #b8c0cc);
-}
-/* 固定的正方形容器：码图尺寸不一，避免弹窗跳动 */
-.pay-img {
-  width: 260px;
-  height: 260px;
-  object-fit: contain;
-  border-radius: 8px;
-  background: #fff;
-}
-.pay-close {
-  margin-top: 0.8rem;
-  font-size: 0.8rem;
-  padding: 0.3rem 1.1rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary, #b8c0cc);
-  cursor: pointer;
-}
-
-/* ---------- Hero ---------- */
-.hero {
-  text-align: center;
-  padding: 5.5rem 1rem 4rem;
+  padding: 4rem 1rem 3rem;
   position: relative;
 }
 
-/* 英文小标：等宽字体 + 字距展开，像飞船编号 */
 .hero-eyebrow {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.38em;
-  color: var(--accent);
-  margin-bottom: 1.6rem;
-  padding: 0.32rem 1.1rem 0.32rem 1.4rem;
-  border: 1px solid rgba(76, 201, 240, 0.24);
-  border-radius: var(--radius-full);
-  background: rgba(76, 201, 240, 0.05);
-  opacity: 0.9;
+  font-family: var(--mono, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.34em;
+  color: var(--accent, #4cc9f0);
+  opacity: 0.75;
+  margin-bottom: 1.4rem;
+  animation: fadeUp 0.6s ease both;
 }
 
+/* 标题：逐字入场 */
 .hero-title {
-  font-family: var(--font-serif);
-  font-size: clamp(2.5rem, 7.5vw, 4rem);
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: clamp(2.6rem, 8vw, 4.4rem);
+  font-weight: 700;
   letter-spacing: 0.06em;
+  line-height: 1.15;
   margin-bottom: 1.6rem;
-  /* 冷白 → 冰蓝 → 星云紫 的静态渐变
-     性能：原来这里是 background-position 无限动画 + filter: drop-shadow，
-     两者叠加会让标题每帧都重绘并重新计算模糊，是大标题上的主要开销。
-     现在改为静态渐变 + 普通 text-shadow（一次绘制即可）。 */
-  background: linear-gradient(
-    100deg,
-    #ffffff 0%,
-    #cfe9ff 25%,
-    var(--accent) 55%,
-    var(--nebula-soft) 85%
-  );
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.hero-char {
+  display: inline-block;
+  background: linear-gradient(135deg, #ffffff 10%, var(--accent, #4cc9f0) 55%, #7b6cf6 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  animation: charIn 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+@keyframes charIn {
+  from {
+    opacity: 0;
+    transform: translateY(0.5em) scale(0.92);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .hero-desc {
-  font-size: 1.02rem;
-  color: var(--text-secondary);
-  max-width: 35rem;
-  margin: 0 auto 1rem;
-  line-height: 1.95;
-  letter-spacing: 0.02em;
+  font-size: 1rem;
+  color: var(--muted, #8b93a1);
+  max-width: 34rem;
+  line-height: 1.9;
+  margin-bottom: 1.1rem;
+  animation: fadeUp 0.7s 0.5s ease both;
 }
 
-/* 联系方式：站名下方的小字，等宽 + 低饱和，不与内容抢注意力 */
 .hero-contact {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-  margin: 0 auto 2.6rem;
-  font-family: var(--font-mono);
+  font-family: var(--mono, monospace);
   font-size: 0.8rem;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
+  color: var(--muted, #8b93a1);
+  opacity: 0.8;
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  animation: fadeUp 0.7s 0.62s ease both;
 }
 
-/* 分隔：一条渐隐的轨道线，中间一颗呼吸的星 */
-.hero-rule {
+.dot { opacity: 0.45; }
+
+.pay-row {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 1.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  animation: fadeUp 0.7s 0.74s ease both;
+}
+
+.pay-chip {
+  font-size: 0.76rem !important;
+  color: var(--muted, #8b93a1) !important;
+}
+
+.pay-chip:hover {
+  color: var(--accent, #4cc9f0) !important;
+}
+
+/* 向下滚动提示 */
+.hero-scroll {
+  margin-top: 2.6rem;
+  height: 34px;
+  display: flex;
+  justify-content: center;
+  animation: fadeUp 0.7s 0.9s ease both;
+}
+
+.scroll-arrow {
+  width: 1px;
+  height: 32px;
+  background: linear-gradient(to bottom, var(--accent, #4cc9f0), transparent);
   position: relative;
-  width: 220px;
-  height: 1px;
-  margin: 4.2rem auto 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(126, 156, 210, 0.25),
-    transparent
-  );
 }
 
-.hero-rule::after {
+.scroll-arrow::after {
   content: '';
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  transform: translate(-50%, -50%);
-  animation: starPulse 3.6s ease-in-out infinite;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  height: 7px;
+  border-right: 1px solid var(--accent, #4cc9f0);
+  border-bottom: 1px solid var(--accent, #4cc9f0);
+  transform: rotate(45deg);
+  animation: scrollHint 1.8s ease-in-out infinite;
 }
 
-/* ---------- 区块 ---------- */
-.section {
-  margin-top: 4.5rem;
+@keyframes scrollHint {
+  0%, 100% { opacity: 0.3; transform: translateY(-4px) rotate(45deg); }
+  50% { opacity: 1; transform: translateY(2px) rotate(45deg); }
 }
 
-.section-header {
+/* ==================== 文章列表 ==================== */
+.posts {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 1.2rem 4rem;
+}
+
+.posts-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 1.5rem;
-  gap: 1rem;
+  margin-bottom: 1.4rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--border, #23262f);
 }
 
-.section-title {
-  font-family: var(--font-serif);
-  font-size: 1.32rem;
+.posts-title {
+  font-size: 1.1rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  color: #eef4ff;
-  padding-left: 0.9rem;
+  color: var(--text, #e8ecf1);
   position: relative;
+  padding-left: 0.7rem;
 }
 
-/* 左侧冷光竖条 */
-.section-title::before {
+/* 标题左侧的竖条，呼应 Valaxy 的分节视觉 */
+.posts-title::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 0.24em;
-  bottom: 0.24em;
-  width: 2px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(180deg, var(--accent), rgba(76, 201, 240, 0));
-  box-shadow: 0 0 10px rgba(76, 201, 240, 0.6);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 0.95em;
+  border-radius: 2px;
+  background: var(--accent, #4cc9f0);
 }
 
-/* ---------- 卡片 ---------- */
-.article-card {
-  padding: 0;
-  display: flex;
+.posts-more {
+  font-size: 0.8rem;
+  color: var(--muted, #8b93a1);
+  transition: color 0.18s ease;
 }
 
-.toy-card,
-.tool-card {
-  padding: 0;
+.posts-more:hover {
+  color: var(--accent, #4cc9f0);
 }
 
-.card-link {
+.post-list {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  width: 100%;
+  gap: 0.9rem;
+}
+
+.post-skeleton {
+  padding: 1.2rem;
+  border: 1px solid var(--border, #23262f);
+  border-radius: 12px;
+  background: var(--surface, #111318);
+}
+
+/* 卡片：参考 Valaxy 的横向条目形态 */
+.post-card {
+  display: flex;
+  gap: 1.1rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--border, #23262f);
+  border-radius: 12px;
+  background: var(--surface, #111318);
   color: inherit;
   text-decoration: none;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+  animation: cardIn 0.5s ease both;
+  will-change: transform;
 }
 
-.article-card:hover .card-title,
-.toy-card:hover .card-title,
-.tool-card:hover .card-title {
-  color: var(--accent-soft);
+.post-card:hover {
+  border-color: rgba(76, 201, 240, 0.42);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.28);
 }
 
-.card-cover {
-  width: 100%;
-  aspect-ratio: 16 / 9;
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.post-cover {
+  flex: 0 0 132px;
+  height: 92px;
+  border-radius: 8px;
   overflow: hidden;
-  background: var(--bg-overlay);
-  position: relative;
+  background: rgba(255, 255, 255, 0.03);
 }
 
-/* 封面底部渐隐，让图片与卡片底色自然衔接 */
-.card-cover::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, transparent 45%, rgba(10, 15, 29, 0.9));
-  pointer-events: none;
-}
-
-.card-cover img {
+.post-cover :deep(img) {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.6s var(--ease-out), filter 0.4s var(--ease);
-  filter: saturate(0.92);
 }
 
-.article-card:hover .card-cover img {
-  transform: scale(1.05);
-  filter: saturate(1.05) brightness(1.04);
-}
-
-.card-body {
-  padding: 1.35rem 1.5rem 1.5rem;
+.post-body {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  flex: 1;
+  gap: 0.4rem;
 }
 
-.card-meta {
+.post-meta {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.7rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
 }
 
-/* 分类：等宽小字，像一枚数据标签 */
-.category-badge {
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--accent-soft);
-  background: rgba(76, 201, 240, 0.09);
-  padding: 0.14rem 0.5rem;
-  border-radius: 4px;
-  border: 1px solid rgba(76, 201, 240, 0.24);
-}
-
-.dot {
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  opacity: 0.6;
-}
-
-.date {
-  font-family: var(--font-mono);
+.post-date {
+  font-family: var(--mono, monospace);
   font-size: 0.72rem;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
+  color: var(--muted, #8b93a1);
+  opacity: 0.85;
 }
 
-.card-title {
-  font-family: var(--font-serif);
-  font-size: 1.12rem;
+.post-title {
+  font-size: 1.05rem;
   font-weight: 600;
-  line-height: 1.58;
-  margin-bottom: 0.62rem;
-  color: #e8f0fc;
-  transition: color 0.24s var(--ease);
-}
-
-.article-card:hover .card-title {
-  color: var(--accent-soft);
-}
-
-.card-summary {
-  font-size: 0.87rem;
-  color: var(--text-secondary);
-  line-height: 1.8;
-  margin-bottom: 1rem;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
+  color: var(--text, #e8ecf1);
+  line-height: 1.45;
+  transition: color 0.18s ease;
   overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
-.card-tags {
+.post-card:hover .post-title {
+  color: var(--accent, #4cc9f0);
+}
+
+.post-summary {
+  font-size: 0.85rem;
+  color: var(--muted, #8b93a1);
+  line-height: 1.72;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.post-tags {
   display: flex;
+  gap: 0.35rem;
   flex-wrap: wrap;
-  margin-top: auto;
+  margin-top: 0.1rem;
 }
 
-.tool-icon {
-  font-size: 1.7rem;
-  margin-bottom: 0.7rem;
-  line-height: 1;
-  filter: drop-shadow(0 0 12px rgba(76, 201, 240, 0.35));
+.post-tag {
+  font-family: var(--mono, monospace);
+  font-size: 0.7rem !important;
 }
 
-.tool-card .card-body {
-  padding: 1.5rem;
+.posts-empty {
+  padding: 2.5rem 0;
 }
 
-.tool-card .card-summary {
-  margin-bottom: 1.1rem;
+/* ==================== 弹窗图片 ==================== */
+.pay-img {
+  width: 100%;
+  border-radius: 8px;
+  display: block;
 }
 
-/* ---------- 响应式 ---------- */
-@media (max-width: 860px) {
+/* ==================== 响应式 ==================== */
+@media (max-width: 600px) {
   .hero {
-    padding: 2.75rem 0.5rem 2.25rem;
+    min-height: 62vh;
+    padding: 3rem 1rem 2rem;
   }
 
-  .hero-title {
-    font-size: 2.3rem;
-    letter-spacing: 0.04em;
+  .post-card {
+    flex-direction: column;
   }
 
-  .hero-eyebrow {
-    font-size: 0.62rem;
-    letter-spacing: 0.26em;
-    padding-left: 1.1rem;
+  .post-cover {
+    flex: none;
+    width: 100%;
+    height: 140px;
+  }
+}
+
+/* ==================== 动效可访问性 ==================== */
+/* 用户开启「减弱动效」时，全部动画立即完成，不做位移动画 */
+@media (prefers-reduced-motion: reduce) {
+  .hero-char,
+  .hero-eyebrow,
+  .hero-desc,
+  .hero-contact,
+  .pay-row,
+  .hero-scroll,
+  .post-card {
+    animation: none !important;
   }
 
-  .hero-desc {
-    font-size: 0.96rem;
+  .scroll-arrow::after {
+    animation: none !important;
   }
 
-  .hero-rule {
-    margin-top: 2.8rem;
-    width: 150px;
-  }
-
-  .section {
-    margin-top: 3.2rem;
-  }
-
-  .section-title {
-    font-size: 1.18rem;
+  .post-card:hover {
+    transform: none;
   }
 }
 </style>

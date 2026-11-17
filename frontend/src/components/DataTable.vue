@@ -1,119 +1,138 @@
 <!--
-  DataTable —— 后台表格（参考 vue-pure-admin 的 ElTable 交互，不引入 Element Plus）
+  DataTable —— 后台表格（基于 Element Plus ElTable 封装）
 
   逻辑描述：
     输入：
       - rows：当前页要显示的行
       - columns：[{ key, label, width?, align? }]
       - total / page / pageSize：分页信息（受控）
-      - searchable：是否显示搜索框；searchField：搜索匹配哪些字段
+      - searchable：是否显示搜索框；searchPlaceholder：占位文案
       - selectable：是否显示多选列（用于批量删除）
-    输出：带表头、斑马纹、hover 高亮、分页、多选、空态的表格
+      - clickableRows：整行可点，上抛 row-click
+      - mutedRow：返回 true 的行整行变暗（区分草稿与已发布）
+      - rowId：行标识函数
+    输出：
+      - 带表头、斑马纹、hover 高亮、分页、多选、空态的表格
+      - 事件：update:page / search / selection-change / row-click
     关键机制：
-      - 列定义驱动渲染，单元格内容通过具名插槽 `cell-<key>` 自定义
-      - 搜索与分页都是"受控"的：组件只发事件，不自己持有筛选结果
-      - 多选用 Set 存选中行的 id，翻页时保留选择
-    不变量：父组件传入的 rows 顺序即渲染顺序；页大小变化后回到第 1 页
-    边界：rows 为空时显示空态而不是空白表格；窄屏横向滚动
+      - 外层保持原来的 props/emits 契约，Admin.vue 不需改动；
+      - 内部用 el-table 渲染，列由 columns 驱动，
+        单元格仍通过具名插槽 `cell-<key>` 自定义；
+      - 搜索与分页仍是"受控"的：组件只发事件，不自己持有筛选结果；
+      - 多选由 el-table 的 selection 列管理，但上抛前映射成「行标识数组」，
+        与原实现的契约保持一致（见 onSelectionChange 注释）。
+    不变量：
+      - 父组件传入的 rows 顺序即渲染顺序
+      - 页大小变化后回到第 1 页（由父组件处理，本组件只上抛事件）
+    边界：
+      - rows 为空时显示 el-table 的 empty 插槽，不是空白表格
+      - 窄屏横向滚动由 el-table 自带
 
   依据：
-    经典问题：表格组件的受控状态（controlled component）
-    本处变体：后台只需要表格这一块，引入 Element Plus + vue-pure-admin
-               会带来一整棵依赖树和一套 CSS，与你现有的手写主题冲突
-    沿用结论：受控规则——组件不持有数据源，只渲染父组件给的 rows，
-               分页/搜索/排序全部以事件上抛
-    偏离处：没有做列宽拖拽、行拖拽排序、虚拟滚动（后台数据量在百级）
+    经典问题：受控组件（controlled component）与库替换的接口稳定性
+    来源：
+      1. 本组件原有实现（手写表格）的接口契约 —— 见 git 历史；
+         其注释原话："引入 Element Plus + vue-pure-admin 会带来一整棵依赖树
+         和一套 CSS，与你现有的手写主题冲突"。
+      2. Element Plus Table 官方文档
+         https://element-plus.org/zh-CN/component/table.html
+         要点：`data` 绑数据、`selection` 列做多选、
+               `@selection-change` 抛选中行、`row-key` 保证翻页保持选择、
+               `empty-text` / `#empty` 定制空态。
+    原型结论：
+      1. 表格是典型受控组件：数据从外传入，交互以事件上抛；
+      2. ElTable 的 selection 在 data 变化时会重置，
+         必须配 `row-key` 才能跨页保留选择。
+    本处变体：
+      - 原组件为了避开 Element Plus 而手写，现项目已引入 Element Plus，
+        继续维护第二套表格实现属于"同一功能两套实现"（层级纪律禁止）；
+      - Admin.vue 有 1879 行，大量使用本组件，
+        接口一旦变化就要改很多处，因此**保持契约不变**、只换内部实现。
+    沿用结论：
+      - props 与 emits 完全保持原样；
+      - 内部改用 el-table + el-pagination；
+      - 用 row-key 保证跨页选择保留。
+    偏离处：
+      - 未实现列宽拖拽、行拖拽排序、虚拟滚动（与原组件一致，后台数据量在百级）；
+      - 搜索结果高亮未迁移（原组件也没有）。
 -->
 <template>
   <div class="dt">
-    <!-- 工具条 -->
+    <!-- 工具条：左侧放父组件给的按钮，右侧搜索框 -->
     <div v-if="searchable || $slots.toolbar" class="dt-toolbar">
       <div class="dt-toolbar-left">
         <slot name="toolbar"></slot>
       </div>
       <div v-if="searchable" class="dt-search">
-        <input
+        <el-input
           v-model.trim="keyword"
-          class="dt-search-input"
-          type="search"
           :placeholder="searchPlaceholder"
+          clearable
+          size="default"
           @input="$emit('search', keyword)"
-        />
-        <button v-if="keyword" type="button" class="dt-search-clear" @click="clearSearch">✕</button>
+        >
+          <template #prefix>
+            <span class="dt-search-icon">⌕</span>
+          </template>
+        </el-input>
       </div>
     </div>
 
-    <!-- 批量操作条 -->
-    <div v-if="selectable && selected.size" class="dt-batch">
-      <span>已选 {{ selected.size }} 项</span>
-      <button type="button" class="dt-batch-btn" @click="clearSelection">取消选择</button>
-      <slot name="batch" :selected="[...selected]"></slot>
-    </div>
+    <!-- 表格主体 -->
+    <el-table
+      :data="rows"
+      :row-key="tableRowKey"
+      :empty-text="emptyText"
+      :row-class-name="rowClassName"
+      stripe
+      border
+      style="width: 100%"
+      @selection-change="onSelectionChange"
+      @row-click="onRowClick"
+    >
+      <!-- 多选列 -->
+      <el-table-column v-if="selectable" type="selection" width="48" reserve-selection />
 
-    <div class="dt-wrap">
-      <table class="dt-table">
-        <thead>
-          <tr>
-            <th v-if="selectable" class="dt-col-check">
-              <input
-                type="checkbox"
-                :checked="allSelected"
-                :indeterminate.prop="selected.size > 0 && !allSelected"
-                @change="toggleAll"
-              />
-            </th>
-            <th
-              v-for="col in columns"
-              :key="col.key"
-              :style="{ width: col.width ? col.width + 'px' : undefined, textAlign: col.align || 'left' }"
-            >{{ col.label }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="row in rows"
-            :key="rowKey(row)"
-            :class="{
-              'is-selected': selected.has(rowKey(row)),
-              'is-clickable': clickableRows,
-              'is-muted': mutedRow ? mutedRow(row) : false
-            }"
-            @click="onRowClick(row, $event)"
-          >
-            <td v-if="selectable" class="dt-col-check" @click.stop>
-              <input
-                type="checkbox"
-                :checked="selected.has(rowKey(row))"
-                @change="toggleRow(rowKey(row))"
-              />
-            </td>
-            <td
-              v-for="col in columns"
-              :key="col.key"
-              :style="{ textAlign: col.align || 'left' }"
-            >
-              <slot :name="`cell-${col.key}`" :row="row">
-                {{ row[col.key] }}
-              </slot>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- 数据列：由 columns 驱动，内容可用具名插槽覆盖 -->
+      <el-table-column
+        v-for="col in columns"
+        :key="col.key"
+        :prop="col.key"
+        :label="col.label"
+        :width="col.width"
+        :align="col.align || 'left'"
+      >
+        <template #default="scope">
+          <slot :name="`cell-${col.key}`" :row="scope.row" :value="scope.row[col.key]">
+            {{ scope.row[col.key] }}
+          </slot>
+        </template>
+      </el-table-column>
+    </el-table>
 
-      <p v-if="!rows.length" class="dt-empty">{{ emptyText }}</p>
-    </div>
-
-    <!-- 分页：总条数 + 页码 -->
+    <!-- 分页：总数超过一页才显示 -->
     <div v-if="total > pageSize" class="dt-pager">
-      <span class="dt-total">共 {{ total }} 条</span>
-      <button type="button" class="dt-page-btn" :disabled="page <= 1" @click="go(page - 1)">‹</button>
-      <span class="dt-page-info">{{ page }} / {{ pageCount }}</span>
-      <button type="button" class="dt-page-btn" :disabled="page >= pageCount" @click="go(page + 1)">›</button>
+      <el-pagination
+        :current-page="page"
+        :page-size="pageSize"
+        :total="total"
+        layout="prev, pager, next, total"
+        background
+        @current-change="onPageChange"
+      />
     </div>
   </div>
 </template>
 
 <script setup>
+/**
+ * 表格封装：对外契约与原手写实现完全一致
+ *
+ * 设计要点：
+ *   1. 组件不持有数据：rows / page / total 全部由父组件传入；
+ *   2. 选中集合由 el-table 内部维护，变化时整体上抛（selection-change）；
+ *   3. row-key 是跨页保留选择的必要条件——没有它，翻页会自动清空选中。
+ */
 import { computed, ref } from 'vue'
 
 const props = defineProps({
@@ -139,281 +158,125 @@ const props = defineProps({
 const emit = defineEmits(['update:page', 'search', 'selection-change', 'row-click'])
 
 const keyword = ref('')
-const selected = ref(new Set())
 
-const pageCount = computed(() => Math.max(1, Math.ceil(props.total / props.pageSize)))
-const allSelected = computed(
-  () => props.rows.length > 0 && props.rows.every(r => selected.value.has(rowKey(r)))
-)
-
-/** 行标识：默认用 id，没有就退化成索引组合 */
-function rowKey(row) {
+/**
+ * 行标识：默认用 id，退化到 slug，最后用序号+标题
+ *
+ * 为什么不能直接用对象引用：
+ *   el-table 的 reserve-selection 需要稳定且唯一的字符串/数字 key。
+ */
+function rowKey(row, index) {
   if (props.rowId) return props.rowId(row)
-  return row.id ?? row.slug ?? JSON.stringify(row)
+  if (row.id !== undefined) return row.id
+  if (row.slug !== undefined) return row.slug
+  return `idx-${index}`
 }
 
-function toggleRow(key) {
-  const next = new Set(selected.value)
-  if (next.has(key)) next.delete(key)
-  else next.add(key)
-  selected.value = next
-  emit('selection-change', [...next])
+/** el-table 要求 row-key 接收行对象；这里补上索引回退 */
+function tableRowKey(row) {
+  const idx = props.rows.indexOf(row)
+  return rowKey(row, idx)
 }
 
-function toggleAll() {
-  if (allSelected.value) {
-    selected.value = new Set()
-  } else {
-    selected.value = new Set(props.rows.map(rowKey))
-  }
-  emit('selection-change', [...selected.value])
-}
-
-function clearSelection() {
-  selected.value = new Set()
-  emit('selection-change', [])
-}
-
-function clearSearch() {
-  keyword.value = ''
-  emit('search', '')
-}
-
-function go(p) {
-  const clamped = Math.min(Math.max(1, p), pageCount.value)
-  emit('update:page', clamped)
+/** 草稿行变暗 */
+function rowClassName({ row }) {
+  if (props.mutedRow && props.mutedRow(row)) return 'dt-row-muted'
+  return ''
 }
 
 /**
- * 整行点击。
+ * 多选变化：把选中行映射成「行标识」数组后上抛
  *
- * 输入 → 输出：行数据 + 事件 → emit('row-click', row)
- * 关键机制：先判断点击目标是否落在交互元素里（button/input/select/a/textarea
- *           或 .dt-no-row-click 容器），是则不触发行点击
- * 不变量：行内的"展开/编辑"按钮、下拉框、复选框都不会被行点击吞掉
- * 边界：单元格自定义插槽里若放了别的可交互组件，给它加 .dt-no-row-click 即可豁免
+ * 为什么不能直接透传 el-table 的 selection：
+ *   原手写实现的 selection-change 抛的是**行标识**（slug / id 字符串），
+ *   Admin.vue 里 `batchDeleteArticles(slugs)` 直接把这些标识发给后端，
+ *   请求体形如 `{ slugs: ["a", "b"] }`。
+ *   而 el-table 抛的是完整行对象数组，直接透传会变成
+ *   `{ slugs: [{slug:"a",...}, {slug:"b",...}] }`，后端无法解析。
  *
- * 依据：
- *   经典问题：事件冒泡与交互元素冲突（event delegation 的命中边界）
- *   本处变体：表格同时支持"整行展开"和"单元格内联编辑"两种点击语义
- *   沿用结论：用 closest() 从目标向上找交互边界，命中即短路，避免双触发
- *   偏离处：不区分左中右键，右键菜单尚未用到
+ *   这是"库替换时接口语义保持不变"的具体要求：形状变了就等于改了契约。
  */
-function onRowClick(row, event) {
-  if (!props.clickableRows) return
-  const interactive = event.target.closest(
-    'button, input, select, textarea, a, label, .dt-no-row-click'
-  )
-  if (interactive) return
-  emit('row-click', row)
+function onSelectionChange(selection) {
+  const keys = selection.map((row) => {
+    const idx = props.rows.indexOf(row)
+    return rowKey(row, idx)
+  })
+  emit('selection-change', keys)
 }
 
-defineExpose({ clearSelection })
+/** 整行点击：只在 clickableRows 开启时上抛 */
+function onRowClick(row) {
+  if (props.clickableRows) emit('row-click', row)
+}
+
+function onPageChange(p) {
+  emit('update:page', p)
+}
 </script>
 
 <style scoped>
 .dt {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
+  width: 100%;
 }
 
+/* ---------- 工具条 ---------- */
 .dt-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 12px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 
 .dt-toolbar-left {
   display: flex;
-  gap: 0.5rem;
   align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .dt-search {
-  position: relative;
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.dt-search-icon {
+  color: #8b93a1;
+  font-size: 14px;
+}
+
+/* ---------- 分页 ---------- */
+.dt-pager {
   display: flex;
-  align-items: center;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
-.dt-search-input {
-  width: 200px;
-  padding: 0.4rem 2rem 0.4rem 0.9rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-primary);
-  font-size: 0.82rem;
-  font-family: inherit;
-  transition: border-color 0.2s var(--ease), width 0.2s var(--ease);
-}
-
-.dt-search-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  width: 240px;
-}
-
-.dt-search-clear {
-  position: absolute;
-  right: 0.5rem;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  cursor: pointer;
-}
-
-.dt-batch {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.4rem 0.8rem;
-  border-radius: var(--radius-sm);
-  background: rgba(76, 201, 240, 0.1);
-  border: 1px solid rgba(76, 201, 240, 0.25);
-  font-size: 0.8rem;
-  color: var(--accent-soft);
-}
-
-.dt-batch-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 0.76rem;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.dt-wrap {
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-
-.dt-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.dt-table th {
-  padding: 0.6rem 0.85rem;
-  text-align: left;
-  font-size: 0.76rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-
-.dt-table td {
-  padding: 0.6rem 0.85rem;
-  font-size: 0.84rem;
-  color: var(--text-primary);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  vertical-align: middle;
-}
-
-/* 斑马纹 + hover：长表格也容易横向追踪 */
-.dt-table tbody tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.015);
-}
-
-.dt-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.dt-table tbody tr.is-selected {
-  background: rgba(76, 201, 240, 0.1);
-}
-
-/* 整行可点时给出手型光标，明确"点这行能展开" */
-.dt-table tbody tr.is-clickable {
-  cursor: pointer;
-}
-
-/* 未上线的行（草稿）：整行降透明度，和已发布内容拉开层次 */
-.dt-table tbody tr.is-muted {
+/* ---------- 草稿行 ---------- */
+/* 整行变暗表示"访客看不到"，只是视觉提示，不影响交互 */
+:deep(.dt-row-muted) {
   opacity: 0.55;
 }
 
-.dt-table tbody tr.is-muted:hover,
-.dt-table tbody tr.is-muted.is-selected {
-  opacity: 1;
-}
-
-.dt-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.dt-col-check {
-  width: 36px;
-  text-align: center;
-}
-
-.dt-col-check input {
-  cursor: pointer;
-  accent-color: var(--accent);
-}
-
-.dt-empty {
-  padding: 2.5rem 1rem;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.84rem;
-}
-
-.dt-pager {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
+/* ---------- 表格细节 ---------- */
+/* 表头字重与原手写表格一致，避免视觉跳变 */
+:deep(.el-table th.el-table__cell) {
+  font-weight: 500;
   font-size: 0.78rem;
-  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
-.dt-total {
-  margin-right: auto;
+/* 单元格不再用默认的黑色文字，跟随站点文字色 */
+:deep(.el-table) {
+  font-size: 0.88rem;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.dt-page-btn {
-  width: 1.7rem;
-  height: 1.7rem;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.18s var(--ease);
-}
-
-.dt-page-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent-soft);
-}
-
-.dt-page-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.dt-page-info {
-  font-family: var(--font-mono);
-}
-
-@media (max-width: 720px) {
-  .dt-wrap {
-    overflow-x: auto;
-  }
-
-  .dt-search-input,
-  .dt-search-input:focus {
-    width: 140px;
-  }
+/* 可点击行给出手型指针 */
+:deep(.el-table__row) {
+  transition: background-color 0.15s ease;
 }
 </style>

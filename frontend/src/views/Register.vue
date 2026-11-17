@@ -59,11 +59,24 @@
           />
         </div>
 
-        <p v-if="error" class="msg error">{{ error }}</p>
+        <el-alert
+          v-if="error"
+          :title="error"
+          type="error"
+          :closable="false"
+          show-icon
+          class="form-error"
+        />
 
-        <button class="btn btn-block" type="submit" :disabled="loading">
+        <el-button
+          type="primary"
+          size="large"
+          class="btn-block"
+          :loading="loading"
+          native-type="submit"
+        >
           {{ loading ? '发送中…' : '发送验证码' }}
-        </button>
+        </el-button>
       </form>
 
       <!-- 第二步：验证码 -->
@@ -87,18 +100,39 @@
           />
         </div>
 
-        <p v-if="error" class="msg error">{{ error }}</p>
-        <p v-else-if="notice" class="msg ok">{{ notice }}</p>
+        <el-alert
+          v-if="error"
+          :title="error"
+          type="error"
+          :closable="false"
+          show-icon
+          class="form-error"
+        />
+        <el-alert
+          v-else-if="notice"
+          :title="notice"
+          type="success"
+          :closable="false"
+          show-icon
+          class="form-error"
+        />
 
-        <button class="btn btn-block" type="submit" :disabled="loading || form.code.length !== 6">
+        <el-button
+          type="primary"
+          size="large"
+          class="btn-block"
+          :loading="loading"
+          :disabled="form.code.length !== 6"
+          native-type="submit"
+        >
           {{ loading ? '验证中…' : '完成注册' }}
-        </button>
+        </el-button>
 
         <div class="form-foot">
-          <button type="button" class="link" :disabled="cooldown > 0" @click="resend">
+          <el-button link type="primary" :disabled="cooldown > 0" @click="resend">
             {{ cooldown > 0 ? `${cooldown} 秒后可重发` : '重新发送验证码' }}
-          </button>
-          <button type="button" class="link" @click="backToStep1">修改资料</button>
+          </el-button>
+          <el-button link type="primary" @click="backToStep1">修改资料</el-button>
         </div>
       </form>
 

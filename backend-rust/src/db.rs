@@ -1,149 +1,81 @@
-//! 图床元数据库：SQLite（`data/wanle.db`），使用连接池。
+//! 数据库连接与 schema 初始化（SeaORM 2.0）
 //!
 //! 逻辑描述：
-//!   输入 → 输出：上传的文件名 + 上传者 → 写入 `uploads` 表；查询时按文件名/上传者取回
-//!   关键机制：WAL 模式 + busy_timeout，让读写不互相阻塞
-//!   不变量：同一文件名只可能有一个上传者（filename 是主键）
-//!   边界：找不到记录时返回 None（历史图片 / 管理员手工放入的图片）
-//!
-//! 为什么上传记录用数据库而不是文件：
-//!   上传是**高频写**（每次插图一次），且需要按上传者筛选（`uploads_of`），
-//!   用 SQLite 的索引比遍历目录快得多。
+//!   输入 → 输出：数据库文件路径 → 已连接的 `DatabaseConnection`，
+//!                 并保证所有实体对应的表已存在
+//!   关键机制：
+//!     1. `Database::connect` 建立带连接池的异步连接（`mode=rwc` 允许自动建库）；
+//!     2. `get_schema_registry("wanle_backend::entities::*")` 按实体定义
+//!        自动建表/补列（entity-first 工作流），不需要手写 DDL 或 migrations crate；
+//!     3. 连接放进 `web::Data` 由 actix 跨 worker 共享。
+//!   不变量：
+//!     - 表结构与 `src/entities/*.rs` 的字段一一对应；
+//!     - 同一数据库文件重复初始化不产生重复表（sync 是幂等的）。
+//!   边界：
+//!     - schema sync 只做「加表/加列」，**不删列、不删表**——
+//!       字段从实体删除后库里的列会残留；
+//!     - SQLite 外键默认不开启，级联删除不生效（见下方说明）。
 //!
 //! 依据：
-//!   经典问题：按访问模式选择数据结构（读写模式决定存储选型）
-//!   来源：SQLite 官方文档 WAL 模式（"WAL is significantly faster in most scenarios"）
-//!        https://sqlite.org/wal.html
-//!   原型结论：WAL 模式下读不被写阻塞，适合"读多写少但写要快的元数据表"
-//!   本处变体：单机、单进程、无并发写入压力，仅需一个带索引的小表
-//!   沿用结论：WAL + busy_timeout 足以覆盖本场景的并发形态
-//!   偏离处：未做连接池上限调优（固定 8），个人站并发远低于此
+//!   经典问题：schema 与代码的同步（schema drift）
+//!   来源：SeaORM 官方「Entity First Workflow」文档
+//!        https://www.sea-ql.org/SeaORM/docs/generate-entity/entity-first/
+//!        原文要点：
+//!          - "Since 2.0.0"，entity-first 让你手写 entity，SeaORM 生成表与外键；
+//!          - "This requires two feature flags `schema-sync` and `entity-registry`"；
+//!          - 元路径 "my_crate::entity::*" 必须匹配 Cargo.toml 的 crate 名。
+//!        以及 SQLite 官方文档「Foreign Key Support」
+//!        https://sqlite.org/foreignkeys.html
+//!          —— "Foreign key constraints are disabled by default"
+//!   原型结论：
+//!     1. Schema Registry 从实体自动推断表结构，需要 schema-sync + entity-registry 特性；
+//!     2. SQLite 外键默认关闭，且 `PRAGMA foreign_keys` 是**每连接**生效。
+//!   本处变体：
+//!     - 单机小站，表结构随代码演进，无多环境迁移需求 → 不引入 sea-orm-migration；
+//!     - SeaORM 2.0 的 `Database::connect` 不接受自定义 pool options，
+//!       因此无法用 `after_connect` 保证每个新连接都设 PRAGMA。
+//!   沿用结论：用 Schema Registry 同步表结构；启动时设 WAL 提升并发读写。
+//!   偏离处：**不依赖外键级联**。PRAGMA 只对已建立连接生效，池中新建连接可能未开启，
+//!           级联会静默失效。因此业务层（services 层）删除文章时显式清理其评论。
 
-use std::sync::OnceLock;
-
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::params;
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
 
 use crate::errors::AppError;
 use crate::paths;
 
-pub type DbPool = Pool<SqliteConnectionManager>;
-pub type DbConn = r2d2::PooledConnection<SqliteConnectionManager>;
-
-static POOL: OnceLock<DbPool> = OnceLock::new();
-
-fn db_path() -> std::path::PathBuf {
-    paths::data_dir().join("wanle.db")
-}
-
-/// 初始化连接池与表结构（在 main 启动时调用一次）
-pub fn init() -> Result<(), AppError> {
-    let path = db_path();
-    if let Some(p) = path.parent() {
-        std::fs::create_dir_all(p)?;
+/// 建立连接并同步 schema
+pub async fn init() -> Result<DatabaseConnection, AppError> {
+    let path = paths::data_dir().join("wanle.db");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
     }
 
-    let manager = SqliteConnectionManager::file(&path).with_init(|c| {
-        c.execute_batch(
-            "PRAGMA journal_mode=WAL;
-             PRAGMA synchronous=NORMAL;
-             PRAGMA busy_timeout=5000;",
-        )
-    });
+    // mode=rwc：文件不存在时创建（SQLite URI 选项）
+    let url = format!("sqlite://{}?mode=rwc", path.display());
 
-    let pool = Pool::builder()
-        .max_size(8)
-        .build(manager)
-        .map_err(|e| AppError::Internal(format!("数据库连接池创建失败: {}", e)))?;
+    let db = Database::connect(&url)
+        .await
+        .map_err(|e| AppError::Internal(format!("数据库连接失败: {e}")))?;
 
-    {
-        let conn = pool
-            .get()
-            .map_err(|e| AppError::Internal(format!("获取数据库连接失败: {}", e)))?;
-        migrate(&conn)?;
-    }
+    // WAL：读写不互相阻塞，是本项目并发写入的关键
+    // 注意：这是数据库级持久设置，写入后对后续所有连接生效
+    db.execute_unprepared("PRAGMA journal_mode=WAL")
+        .await
+        .map_err(|e| AppError::Internal(format!("设置 WAL 失败: {e}")))?;
 
-    let _ = POOL.set(pool);
-    Ok(())
+    sync_schema(&db).await?;
+    Ok(db)
 }
 
-/// 取一个连接
-pub fn conn() -> Result<DbConn, AppError> {
-    POOL.get()
-        .ok_or_else(|| AppError::Internal("数据库未初始化".to_string()))?
-        .get()
-        .map_err(|e| AppError::Internal(format!("获取数据库连接失败: {}", e)))
-}
-
-/// 建表（幂等，可重复执行）
-fn migrate(conn: &rusqlite::Connection) -> Result<(), AppError> {
-    conn.execute_batch(
-        r#"
-        CREATE TABLE IF NOT EXISTS uploads (
-            filename    TEXT    PRIMARY KEY,
-            uploader    TEXT    NOT NULL,
-            size        INTEGER NOT NULL DEFAULT 0,
-            created_at  TEXT    NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_uploads_uploader ON uploads(uploader, created_at DESC);
-        "#,
-    )?;
-
-    // 老版本可能没有 uploads 表，也无从知道历史图片是谁传的：
-    // 按「无主」处理（uploader 留空），只有管理员能删，避免误删别人正在用的图。
-    Ok(())
-}
-
-// ==================== 上传记录 ====================
-
-/// 记录一次上传
-pub fn record_upload(
-    filename: &str,
-    uploader: &str,
-    size: u64,
-    created_at: &str,
-) -> Result<(), AppError> {
-    let conn = conn()?;
-    conn.execute(
-        "INSERT OR REPLACE INTO uploads (filename, uploader, size, created_at)
-         VALUES (?1, ?2, ?3, ?4)",
-        params![filename, uploader, size as i64, created_at],
-    )?;
-    Ok(())
-}
-
-/// 删除上传记录（图片被删时调用）
-pub fn forget_upload(filename: &str) -> Result<(), AppError> {
-    let conn = conn()?;
-    conn.execute("DELETE FROM uploads WHERE filename = ?1", params![filename])?;
-    Ok(())
-}
-
-/// 查单张图片的归属
+/// 按实体定义同步表结构（幂等）
 ///
-/// 返回 `Ok(Some(uploader))` 表示有记录；
-/// `Ok(None)` 表示无记录（历史图片 / 管理员手工放入）。
-pub fn find_upload_owner(filename: &str) -> Result<Option<String>, AppError> {
-    let conn = conn()?;
-    let owner: Option<String> = conn
-        .query_row(
-            "SELECT uploader FROM uploads WHERE filename = ?1",
-            params![filename],
-            |r| r.get(0),
-        )
-        .ok();
-    Ok(owner)
-}
-
-/// 某个上传者传过的全部文件名
-pub fn uploads_of(uploader: &str) -> Result<std::collections::HashSet<String>, AppError> {
-    let conn = conn()?;
-    let mut stmt = conn.prepare("SELECT filename FROM uploads WHERE uploader = ?1")?;
-    let rows = stmt.query_map(params![uploader], |r| r.get::<_, String>(0))?;
-    let mut out = std::collections::HashSet::new();
-    for row in rows {
-        out.insert(row?);
-    }
-    Ok(out)
+/// 关键机制：传入 crate 路径通配符，SeaORM 扫描该路径下所有 entity 并逐个 sync。
+/// 路径必须是 `<crate名>::entities::*`，crate 名取自 Cargo.toml 的 `name`
+/// （`wanle-backend` → 编译期 crate 名为 `wanle_backend`）。
+async fn sync_schema(db: &DatabaseConnection) -> Result<(), AppError> {
+    db.get_schema_registry("wanle_backend::entities::*")
+        .sync(db)
+        .await
+        .map_err(|e| AppError::Internal(format!("同步表结构失败: {e}")))?;
+    Ok(())
 }

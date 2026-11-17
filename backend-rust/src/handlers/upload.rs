@@ -23,10 +23,10 @@ use std::io::Write;
 use std::path::Path;
 use std::time::SystemTime;
 
-use crate::content;
-use crate::db;
 use crate::errors::AppError;
 use crate::images;
+use crate::services::upload as upload_svc;
+use sea_orm::DatabaseConnection;
 use crate::middleware;
 use crate::models::{ApiResponse, ImageInfo};
 use crate::paths;
@@ -58,7 +58,7 @@ fn modified_at(meta: &fs::Metadata) -> String {
 
 /// 校验并拼出磁盘路径（拒绝任何路径穿越）
 fn safe_path(filename: &str) -> Result<std::path::PathBuf, AppError> {
-    if !content::is_safe_slug(filename)
+    if !upload_svc::is_safe_filename(filename)
         || Path::new(filename).file_name().and_then(|f| f.to_str()) != Some(filename)
     {
         return Err(AppError::BadRequest("文件名不合法".to_string()));
@@ -80,6 +80,7 @@ fn may_delete(is_admin: bool, requester: &str, uploader: &str) -> bool {
 
 /// POST /api/upload
 pub async fn upload_file(
+    db: web::Data<DatabaseConnection>,
     mut payload: Multipart,
     req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
@@ -168,7 +169,7 @@ pub async fn upload_file(
             }
         }
 
-        if let Err(e) = db::record_upload(&new_name, &claims.sub, size, &content::now()) {
+        if let Err(e) = upload_svc::record(db.as_ref(), &new_name, &claims.sub, size, &upload_svc::now()).await {
             let _ = fs::remove_file(&filepath);
             return Err(e);
         }
@@ -238,14 +239,17 @@ async fn write_file(
 }
 
 /// GET /api/images —— 列出图片，并标注归属与当前用户能否删除
-pub async fn list_images(req: HttpRequest) -> Result<HttpResponse, AppError> {
+pub async fn list_images(
+    db: web::Data<DatabaseConnection>,
+    req: HttpRequest,
+) -> Result<HttpResponse, AppError> {
     let claims = middleware::verify_user(req)?;
 
     // 一次取出自己上传过的文件名集合，避免每张图查一次库
     let mine: HashSet<String> = if claims.is_admin {
         HashSet::new()
     } else {
-        db::uploads_of(&claims.sub)?
+        upload_svc::by_uploader(db.as_ref(), &claims.sub).await?
     };
 
     let mut images: Vec<(SystemTime, ImageInfo)> = Vec::new();
@@ -266,7 +270,7 @@ pub async fn list_images(req: HttpRequest) -> Result<HttpResponse, AppError> {
             {
                 continue;
             }
-            let uploader = db::find_upload_owner(&filename)
+            let uploader = upload_svc::owner(db.as_ref(), &filename).await
                 .unwrap_or(None)
                 .unwrap_or_default();
             // 站长全开；普通用户只要文件名出现在自己的集合里即可删
@@ -321,6 +325,7 @@ pub async fn list_images(req: HttpRequest) -> Result<HttpResponse, AppError> {
 
 /// DELETE /api/images/{filename} —— 上传者本人或站长
 pub async fn delete_image(
+    db: web::Data<DatabaseConnection>,
     path: web::Path<String>,
     req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
@@ -333,7 +338,7 @@ pub async fn delete_image(
     if !filepath.is_file() {
         return Err(AppError::NotFound("图片不存在".to_string()));
     }
-    let uploader = db::find_upload_owner(&filename)?.unwrap_or_default();
+    let uploader = upload_svc::owner(db.as_ref(), &filename).await?.unwrap_or_default();
     if !may_delete(claims.is_admin, &claims.sub, &uploader) {
         let message = if uploader.is_empty() {
             "这张图没有归属记录，只有站长可以删除"
@@ -346,7 +351,7 @@ pub async fn delete_image(
     // 先删文件再删归属行：万一中间失败，残留的库行会在下次删除同一文件时被清掉，
     // 而反过来（先删库行、文件删除失败）会留下永远删不掉的无主文件
     fs::remove_file(&filepath)?;
-    let _ = db::forget_upload(&filename);
+    let _ = upload_svc::forget(db.as_ref(), &filename).await;
     log::info!("{} 删除了图片 {}", claims.sub, filepath.display());
     Ok(HttpResponse::Ok().json(ApiResponse::success(
         serde_json::json!({ "filename": filename }),

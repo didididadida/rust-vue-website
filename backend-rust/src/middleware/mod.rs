@@ -111,7 +111,7 @@ pub fn create_jwt(username: &str, is_admin: bool) -> Result<String, AppError> {
     .map_err(Into::into)
 }
 
-fn verify_token(token: &str) -> Result<Claims, AppError> {
+pub fn verify_token(token: &str) -> Result<Claims, AppError> {
     let secret = secret();
     decode::<Claims>(
         token,

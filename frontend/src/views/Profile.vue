@@ -23,11 +23,14 @@
 -->
 <template>
   <div class="profile-page anime-page" data-bg="profile">
-    <div v-if="loading" class="loading">加载中</div>
+    <div v-if="loading" class="loading">
+      <el-skeleton :rows="8" animated />
+    </div>
 
     <div v-else-if="!profile" class="empty">
-      <p>用户不存在</p>
-      <router-link to="/blog" class="btn" style="margin-top: 1.25rem">去看看博客</router-link>
+      <el-empty description="用户不存在">
+        <el-button type="primary" @click="$router.push('/blog')">去看看博客</el-button>
+      </el-empty>
     </div>
 
     <template v-else>

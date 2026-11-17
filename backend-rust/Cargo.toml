@@ -6,12 +6,26 @@ edition = "2021"
 rust-version = "1.85"
 resolver = "3"
 
-# 数据全部存放在 Markdown / 纯文本文件中，不使用任何数据库。
 [dependencies]
 actix-web = "4"
 actix-multipart = "0.7"
 actix-files = "0.6"
 actix-cors = "0.7"
+# SeaORM 2.0：异步 ORM + SQLite 驱动
+# 只开实际用到的 feature，避免拖入 postgres/mysql 驱动
+# schema-sync / entity-registry：entity-first 工作流必需（官方文档明确要求）
+sea-orm = { version = "2.0", features = [
+    "sqlx-sqlite",
+    "runtime-tokio-rustls",
+    "macros",
+    "with-chrono",
+    "with-json",
+    "schema-sync",
+    "entity-registry",
+] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# WebSocket：actix 官方推荐的无 actor 实现（actix-ws/README.md 标题即 "without actors"）
+actix-ws = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -26,9 +40,6 @@ futures-util = "0.3"
 
 # 数据：文章/评论仍是 Markdown/JSON 文件；论坛使用 SQLite（见 db.rs）
 # bundled: 把 SQLite 源码静态编译进二进制，目标机无需额外装库
-rusqlite = { version = "0.32", features = ["bundled"] }
-r2d2 = "0.8"                    # 连接池，避免每请求都开库
-r2d2_sqlite = "0.25"
 
 # 邮箱验证码注册
 sha2 = "0.10"                                    # 验证码只存哈希

@@ -5,29 +5,28 @@
 
     <!-- 分类筛选 -->
     <div class="filters">
-      <button
-        v-for="cat in categories"
-        :key="cat.value"
-        :class="['filter-btn', { active: currentCategory === cat.value }]"
-        @click="filterByCategory(cat.value)"
-      >
-        {{ cat.label }}
-      </button>
+      <el-radio-group v-model="currentCategory" @change="filterByCategory">
+        <el-radio-button v-for="cat in categories" :key="cat.value" :value="cat.value">
+          {{ cat.label }}
+        </el-radio-button>
+      </el-radio-group>
     </div>
 
     <!-- 文章列表 -->
-    <div v-if="loading" class="loading">加载中...</div>
+    <div v-if="loading" class="loading">
+      <el-skeleton :rows="4" animated />
+    </div>
     <div v-else-if="articles.length === 0" class="empty">
-      <p>该分类下暂无文章</p>
+      <el-empty description="该分类下暂无文章" />
     </div>
     <div v-else class="article-list">
       <article v-for="item in articles" :key="item.id" class="card article-item">
         <div v-if="item.cover_image" class="item-cover">
-          <img :src="item.cover_image" :alt="item.title" loading="lazy" />
+          <el-image :src="item.cover_image" :alt="item.title" fit="cover" lazy />
         </div>
         <div class="item-body">
           <div class="item-meta">
-            <span class="category-badge">{{ categoryLabel(item.category) }}</span>
+            <el-tag size="small" type="info" effect="plain">{{ categoryLabel(item.category) }}</el-tag>
             <span v-if="!item.is_published" class="dot">·</span>
             <span class="dot">·</span>
             <span class="date">{{ formatDate(item.created_at) }}</span>
@@ -37,7 +36,7 @@
           </h2>
           <p class="item-summary">{{ item.summary || stripMarkdown(item.content).slice(0, 150) + '...' }}</p>
           <div v-if="item.tags && item.tags.length" class="item-tags">
-            <span v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</span>
+            <el-tag v-for="tag in item.tags" :key="tag" size="small" effect="plain" class="tag">{{ tag }}</el-tag>
           </div>
           <router-link :to="'/blog/' + encodeURIComponent(item.slug)" class="read-more">阅读全文 →</router-link>
         </div>

@@ -3,8 +3,8 @@
     <h1 class="code">404</h1>
     <p class="message">页面走丢了，这里什么都没有 🙈</p>
     <div class="actions">
-      <router-link to="/" class="btn">返回首页</router-link>
-      <router-link to="/blog" class="btn btn-outline">去看看博客</router-link>
+      <el-button type="primary" @click="$router.push('/')">返回首页</el-button>
+      <el-button @click="$router.push('/blog')">去看看博客</el-button>
     </div>
   </div>
 </template>

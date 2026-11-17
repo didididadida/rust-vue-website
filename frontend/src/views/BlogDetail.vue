@@ -1,6 +1,8 @@
 <template>
   <div class="blog-detail">
-    <div v-if="loading" class="loading">加载中...</div>
+    <div v-if="loading" class="loading">
+      <el-skeleton :rows="6" animated />
+    </div>
     <div v-else-if="!article" class="empty">
       <p>文章不存在或已被删除</p>
       <router-link to="/blog" class="btn" style="margin-top: 16px;">返回博客列表</router-link>
@@ -31,7 +33,7 @@
         <!-- 文章头部 -->
         <header class="detail-header">
           <div class="detail-meta">
-            <span class="category-badge">{{ categoryLabel(article.category) }}</span>
+            <el-tag size="small" type="info" effect="plain">{{ categoryLabel(article.category) }}</el-tag>
             <span class="dot">·</span>
             <span class="date">{{ formatDate(article.created_at) }}</span>
             <span v-if="article.updated_at !== article.created_at" class="date updated">
@@ -40,7 +42,7 @@
           </div>
           <h1 class="detail-title">{{ article.title }}</h1>
           <div v-if="article.tags && article.tags.length" class="detail-tags">
-            <span v-for="tag in article.tags" :key="tag" class="tag">{{ tag }}</span>
+            <el-tag v-for="tag in article.tags" :key="tag" size="small" effect="plain" class="tag">{{ tag }}</el-tag>
           </div>
         </header>
 
@@ -48,11 +50,11 @@
         <div ref="bodyRef" class="detail-body markdown-body" v-html="rendered.html"></div>
 
         <!-- 评论 -->
-        <CommentSection :slug="article.slug" />
+        <WalineComments :slug="article.slug" />
 
         <!-- 底部导航 -->
         <div class="detail-footer">
-          <router-link to="/blog" class="btn btn-outline">返回文章列表</router-link>
+          <el-button @click="$router.push('/blog')">返回文章列表</el-button>
         </div>
       </article>
     </div>
@@ -65,7 +67,7 @@ import { useRoute } from 'vue-router'
 import http from '../api'
 import { categoryLabel, formatDate } from '../labels'
 import { renderMarkdown, enableCodeCopy, sanitizeHtmlSync } from '../markdown'
-import CommentSection from '../components/CommentSection.vue'
+import WalineComments from '../components/WalineComments.vue'
 
 const route = useRoute()
 const article = ref(null)

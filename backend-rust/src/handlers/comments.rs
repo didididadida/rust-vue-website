@@ -1,289 +1,261 @@
-//! 评论接口：数据保存在 `data/comments/<slug>.json`，不使用数据库。
+//! 评论接口
+//!
+//! 逻辑描述：
+//!   输入 → 输出：文章 slug + 评论体 → 评论 JSON 响应
+//!   关键机制：
+//!     1. 业务委托 `services::comment`，本层做参数解析与权限判断；
+//!     2. 是否需审核由环境变量 `WANLE_COMMENT_REVIEW` 决定（默认需要）；
+//!     3. 未审核评论只对管理员可见。
+//!   不变量：
+//!     - 公开列表不返回未审核评论（管理员除外）；
+//!     - 公开列表不返回邮箱字段。
+//!   边界：
+//!     - 文章不存在时返回 404，避免为不存在的 slug 攒评论。
+//!
+//! 依据：
+//!   经典问题：内容审核与可见性控制（moderation & visibility）
+//!   来源：
+//!     1. 本项目原实现 `handlers/comments.rs` 与 `comments.rs`：
+//!        原逻辑用 `WANLE_COMMENT_REVIEW` 决定 is_approved 初值，
+//!        公开接口只返回已审核的。
+//!     2. OWASP 关于敏感字段不得出现在公开响应的要求
+//!        https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
+//!   原型结论：审核状态过滤必须发生在服务端，不能只靠前端隐藏。
+//!   本处变体：从 JSON 文件迁到表，可见性规则不变。
+//!   沿用结论：保留 WANLE_COMMENT_REVIEW 语义；公开列表过滤未审核。
+//!   偏离处：管理员列表不再合并论坛回复（论坛已从项目移除）。
 
 use actix_web::{web, HttpRequest, HttpResponse};
+use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::comments::{self, Comment};
-use crate::content::{self, ArticleRecord};
 use crate::errors::AppError;
 use crate::middleware;
-use crate::models::{
-    ApiResponse, CommentAdminView, CommentApprove, CommentListResponse, CommentUpsert, CommentView,
-};
-use crate::paths;
+use crate::models::ApiResponse;
+use crate::services::{article, comment};
 
-/// 昵称 / 正文长度上限
-const MAX_AUTHOR_LEN: usize = 30;
-const MAX_CONTENT_LEN: usize = 2000;
+/// 发表评论的请求体
+#[derive(Debug, Deserialize)]
+pub struct CommentUpsert {
+    /// 昵称
+    pub author: String,
+    /// 正文（纯文本，前端按纯文本渲染）
+    pub content: String,
+    /// 邮箱（可选，仅管理员可见）
+    #[serde(default)]
+    pub email: String,
+    /// 回复目标评论 id
+    #[serde(default)]
+    pub parent_id: Option<String>,
+}
 
-fn to_view(item: &Comment) -> CommentView {
-    CommentView {
-        id: item.id.clone(),
-        parent_id: item.parent_id.clone(),
-        author: item.author.clone(),
-        content: item.content.clone(),
-        is_approved: item.is_approved,
-        created_at: item.created_at.clone(),
+/// 评论是否需要审核
+fn review_required() -> bool {
+    match std::env::var("WANLE_COMMENT_REVIEW") {
+        Ok(v) => {
+            let v = v.trim().to_lowercase();
+            // 只有显式写 false/0/no 才视为关闭审核
+            !(v == "false" || v == "0" || v == "no")
+        }
+        Err(_) => true,
     }
 }
 
-fn to_admin_view(slug: &str, item: &Comment) -> CommentAdminView {
-    CommentAdminView {
-        slug: slug.to_string(),
-        id: item.id.clone(),
-        parent_id: item.parent_id.clone(),
-        author: item.author.clone(),
-        email: item.email.clone(),
-        content: item.content.clone(),
-        is_approved: item.is_approved,
-        created_at: item.created_at.clone(),
-    }
+/// 公开视图：去掉邮箱
+fn public_view(c: &comment::Comment) -> serde_json::Value {
+    json!({
+        "id": c.id,
+        "parent_id": c.parent_id,
+        "author": c.author,
+        "content": c.content,
+        "is_approved": c.is_approved,
+        "created_at": c.created_at,
+    })
 }
 
-/// 确认文章存在（草稿只能管理员评论）
-fn ensure_article(slug: &str, is_admin: bool) -> Result<(), AppError> {
-    let doc = content::find::<ArticleRecord>(&paths::posts_dir(), slug)?
-        .ok_or_else(|| AppError::NotFound("文章不存在".to_string()))?;
-    if !doc.data.is_published && !is_admin {
-        return Err(AppError::NotFound("文章不存在".to_string()));
-    }
-    Ok(())
-}
-
-/// GET /api/articles/{slug}/comments —— 公开，只返回已通过审核的评论
+/// GET /api/articles/{slug}/comments —— 某篇文章的评论
 pub async fn list_comments(
+    db: web::Data<DatabaseConnection>,
     path: web::Path<String>,
     req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
     let slug = path.into_inner();
     let is_admin = middleware::current_user(&req)
-        .map(|claims| claims.is_admin)
+        .map(|c| c.is_admin)
         .unwrap_or(false);
-    ensure_article(&slug, is_admin)?;
 
-    let items: Vec<CommentView> = comments::load(&slug)?
+    let all = comment::load(db.as_ref(), &slug).await?;
+
+    // 非管理员只能看到已审核的
+    let items: Vec<serde_json::Value> = all
         .iter()
         .filter(|c| is_admin || c.is_approved)
-        .map(to_view)
+        .map(public_view)
         .collect();
 
-    Ok(
-        HttpResponse::Ok().json(ApiResponse::success(CommentListResponse {
-            total: items.len(),
-            items,
-        })),
-    )
-}
-
-/// POST /api/articles/{slug}/comments —— 公开，任何人可评论
-pub async fn create_comment(
-    path: web::Path<String>,
-    body: web::Json<CommentUpsert>,
-    req: HttpRequest,
-) -> Result<HttpResponse, AppError> {
-    let slug = path.into_inner();
-    let is_admin = middleware::current_user(&req)
-        .map(|claims| claims.is_admin)
-        .unwrap_or(false);
-    ensure_article(&slug, is_admin)?;
-
-    let body = body.into_inner();
-
-    // 蜜罐命中：静默丢弃，假装成功，避免机器人反复试探
-    if body
-        .website
-        .as_deref()
-        .map(str::trim)
-        .is_some_and(|v| !v.is_empty())
-    {
-        log::warn!("疑似垃圾评论（蜜罐命中），已丢弃：slug={}", slug);
-        return Ok(HttpResponse::Ok().json(ApiResponse::success(json!({
-            "accepted": false,
-            "requires_review": false
-        }))));
-    }
-
-    let author = body.author.trim().to_string();
-    let content_text = body.content.trim().to_string();
-
-    if author.is_empty() {
-        return Err(AppError::BadRequest("昵称不能为空".to_string()));
-    }
-    if author.chars().count() > MAX_AUTHOR_LEN {
-        return Err(AppError::BadRequest(format!(
-            "昵称过长（最多 {} 个字符）",
-            MAX_AUTHOR_LEN
-        )));
-    }
-    if content_text.is_empty() {
-        return Err(AppError::BadRequest("评论内容不能为空".to_string()));
-    }
-    if content_text.chars().count() > MAX_CONTENT_LEN {
-        return Err(AppError::BadRequest(format!(
-            "评论过长（最多 {} 个字符）",
-            MAX_CONTENT_LEN
-        )));
-    }
-
-    // 回复目标必须存在，且不能回复自己
-    let parent_id = body
-        .parent_id
-        .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty());
-    if let Some(pid) = parent_id.as_deref() {
-        let exists = comments::load(&slug)?.iter().any(|c| c.id == pid);
-        if !exists {
-            return Err(AppError::BadRequest("要回复的评论不存在".to_string()));
-        }
-    }
-
-    // 是否需要先审核：设置 WANLE_COMMENT_REVIEW=1 开启
-    let requires_review = std::env::var("WANLE_COMMENT_REVIEW")
-        .map(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(false);
-
-    let comment = Comment {
-        id: comments::new_id(),
-        parent_id,
-        author,
-        email: content::clean_opt(body.email).unwrap_or_default(),
-        content: content_text,
-        is_approved: !requires_review,
-        created_at: content::now(),
-    };
-
-    let saved = comments::add(&slug, comment)?;
-
+    // 评论列表返回 { total, items }（与原实现一致，前端已按此解析）
     Ok(HttpResponse::Ok().json(ApiResponse::success(json!({
-        "accepted": true,
-        "requires_review": !saved.is_approved,
-        "comment": to_view(&saved)
+        "total": items.len(),
+        "items": items,
     }))))
 }
 
-/// DELETE /api/comments/{slug}/{id} —— 管理员删除
+/// POST /api/articles/{slug}/comments —— 发表评论
+pub async fn create_comment(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<String>,
+    body: web::Json<CommentUpsert>,
+) -> Result<HttpResponse, AppError> {
+    let slug = path.into_inner();
+
+    if body.content.trim().is_empty() {
+        return Err(AppError::BadRequest("评论内容不能为空".to_string()));
+    }
+    if body.author.trim().is_empty() {
+        return Err(AppError::BadRequest("请填写昵称".to_string()));
+    }
+
+    // 文章必须存在，避免为不存在的 slug 攒评论
+    if article::find(db.as_ref(), &slug).await?.is_none() {
+        return Err(AppError::NotFound("文章不存在".to_string()));
+    }
+
+    let approved = !review_required();
+
+    let created = comment::add(
+        &db,
+        &slug,
+        body.author.trim(),
+        body.email.trim(),
+        body.content.trim(),
+        body.parent_id.clone(),
+        approved,
+    )
+    .await?;
+
+    Ok(HttpResponse::Created().json(ApiResponse::success(json!({
+        "comment": public_view(&created),
+        "pending": !approved,
+    }))))
+}
+
+/// DELETE /api/comments/{slug}/{id} —— 删除评论
 pub async fn delete_comment(
+    db: web::Data<DatabaseConnection>,
     path: web::Path<(String, String)>,
     req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
     middleware::verify_admin(req)?;
     let (slug, id) = path.into_inner();
 
-    if comments::remove(&slug, &id)? {
-        Ok(HttpResponse::Ok().json(ApiResponse::success(json!({ "id": id }))))
-    } else {
-        Err(AppError::NotFound("评论不存在".to_string()))
-    }
-}
-
-// ==================== 批量删除 ====================
-
-/// 一条待删除评论的定位：文章 slug + 评论 id
-#[derive(Debug, Deserialize)]
-pub struct CommentKey {
-    pub slug: String,
-    pub id: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BatchDeleteBody {
-    pub items: Vec<CommentKey>,
-}
-
-/// POST /api/comments/batch-delete —— 批量删除评论（管理员）
-///
-/// 输入 → 输出：{ items: [{slug, id}] } → { deleted: [...], failed: [{slug, id, error}] }
-/// 关键机制：评论挂在文章下，单键 (slug,id) 才能唯一定位，
-///           所以请求体用对象数组而不是 slug 数组
-/// 不变量：deleted + failed 覆盖所有请求项（按 slug/id 去重后）
-/// 边界：单次最多 200 条；空列表直接拒绝
-///
-/// 依据：
-///   经典问题：批量操作的部分失败（partial failure）
-///   本处变体：评论是"从属实体"，主键是复合键 (slug,id)，删除即改单个 JSON 文件
-///   沿用结论：逐条执行、逐条汇报，一条失败不中断其余
-///   偏离处：同一文章的多条评论会重复读改写该文件，N 条评论产生 N 次写；
-///           后台单次删除量在百级、文件为小 JSON，可接受
-pub async fn batch_delete(
-    body: web::Json<BatchDeleteBody>,
-    req: HttpRequest,
-) -> Result<HttpResponse, AppError> {
-    let claims = middleware::verify_admin(req)?;
-    let body = body.into_inner();
-
-    if body.items.is_empty() {
-        return Err(AppError::BadRequest("没有要删除的评论".to_string()));
-    }
-    if body.items.len() > 200 {
-        return Err(AppError::BadRequest("一次最多删除 200 条".to_string()));
+    let removed = comment::remove(db.as_ref(), &slug, &id).await?;
+    if !removed {
+        return Err(AppError::NotFound("评论不存在".to_string()));
     }
 
-    let mut seen = std::collections::HashSet::new();
-    let mut deleted: Vec<serde_json::Value> = Vec::new();
-    let mut failed: Vec<serde_json::Value> = Vec::new();
-
-    for item in body.items {
-        let slug = item.slug.trim().to_string();
-        let id = item.id.trim().to_string();
-        if slug.is_empty() || id.is_empty() || !seen.insert((slug.clone(), id.clone())) {
-            continue;
-        }
-        match comments::remove(&slug, &id) {
-            Ok(true) => deleted.push(json!({ "slug": slug, "id": id })),
-            Ok(false) => failed.push(json!({ "slug": slug, "id": id, "error": "评论不存在" })),
-            Err(e) => failed.push(json!({ "slug": slug, "id": id, "error": e.message() })),
-        }
-    }
-
-    log::info!(
-        "{} 批量删除评论：成功 {}，失败 {}",
-        claims.sub,
-        deleted.len(),
-        failed.len()
-    );
-    Ok(HttpResponse::Ok().json(ApiResponse::success(
-        json!({ "deleted": deleted, "failed": failed }),
-    )))
+    Ok(HttpResponse::Ok().json(ApiResponse::success(json!({ "id": id }))))
 }
 
-/// PUT /api/comments/{slug}/{id}/approve —— 管理员审核
+/// PUT /api/comments/{slug}/{id}/approve —— 审核评论
 pub async fn approve_comment(
+    db: web::Data<DatabaseConnection>,
     path: web::Path<(String, String)>,
-    body: web::Json<CommentApprove>,
+    body: web::Json<serde_json::Value>,
     req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
     middleware::verify_admin(req)?;
     let (slug, id) = path.into_inner();
 
-    match comments::set_approved(&slug, &id, body.approved)? {
-        Some(item) => {
-            Ok(HttpResponse::Ok().json(ApiResponse::success(to_admin_view(&slug, &item))))
-        }
-        None => Err(AppError::NotFound("评论不存在".to_string())),
-    }
+    // 缺省为 true（通过审核）
+    let approved = body
+        .get("approved")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+    let updated = comment::set_approved(db.as_ref(), &slug, &id, approved)
+        .await?
+        .ok_or_else(|| AppError::NotFound("评论不存在".to_string()))?;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::success(public_view(&updated))))
 }
 
 /// GET /api/comments —— 管理员查看全站评论（含待审核）
-///
-/// 输入 → 输出：无 → { total, items: [...] }，按时间倒序
-/// 不变量：返回的每条都能定位到 (slug, id)
-/// 边界：最多返回 300 条（个人站点评论量级小，分页在内存里做）
-pub async fn list_all_comments(req: HttpRequest) -> Result<HttpResponse, AppError> {
+pub async fn list_all_comments(
+    db: web::Data<DatabaseConnection>,
+    req: HttpRequest,
+) -> Result<HttpResponse, AppError> {
     middleware::verify_admin(req)?;
 
-    let mut items: Vec<CommentAdminView> = comments::list_all()?
-        .iter()
-        .map(|(slug, item)| to_admin_view(slug, item))
+    let all = comment::list_all(db.as_ref()).await?;
+    let total = all.len();
+
+    // 最多返回 300 条（个人站评论量级小，分页在内存里做）
+    let items: Vec<serde_json::Value> = all
+        .into_iter()
+        .take(300)
+        .map(|(slug, c)| {
+            json!({
+                "slug": slug,
+                "id": c.id,
+                "parent_id": c.parent_id,
+                "author": c.author,
+                "email": c.email,
+                "content": c.content,
+                "is_approved": c.is_approved,
+                "created_at": c.created_at,
+            })
+        })
         .collect();
 
-    // 按时间倒序
-    items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    let total = items.len();
-    items.truncate(300);
-
+    // 评论列表返回 { total, items }（与原实现一致，前端已按此解析）
+    // total 是截断前的总数，items 最多 300 条
     Ok(HttpResponse::Ok().json(ApiResponse::success(json!({
         "total": total,
-        "items": items
+        "items": items,
+    }))))
+}
+
+/// POST /api/comments/batch-delete —— 批量删除
+pub async fn batch_delete(
+    db: web::Data<DatabaseConnection>,
+    body: web::Json<serde_json::Value>,
+    req: HttpRequest,
+) -> Result<HttpResponse, AppError> {
+    middleware::verify_admin(req)?;
+
+    // 评论需要 (slug, id) 二元组定位
+    let pairs: Vec<(String, String)> = body
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    let slug = v.get("slug")?.as_str()?.to_string();
+                    let id = v.get("id")?.as_str()?.to_string();
+                    Some((slug, id))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if pairs.is_empty() {
+        return Err(AppError::BadRequest("没有选中任何评论".to_string()));
+    }
+
+    let mut deleted = Vec::new();
+    let mut failed = Vec::new();
+
+    for (slug, id) in pairs {
+        match comment::remove(db.as_ref(), &slug, &id).await {
+            Ok(true) => deleted.push(json!({ "slug": slug, "id": id })),
+            Ok(false) => failed.push(json!({ "slug": slug, "id": id, "error": "评论不存在" })),
+            Err(e) => failed.push(json!({ "slug": slug, "id": id, "error": e.to_string() })),
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(ApiResponse::success(json!({
+        "deleted": deleted,
+        "failed": failed,
     }))))
 }

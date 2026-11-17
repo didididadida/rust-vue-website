@@ -8,39 +8,56 @@
         <p class="panel-sub">{{ isAdminEntry ? '管理控制台' : '登录你的账号' }}</p>
       </div>
 
-      <form class="form" @submit.prevent="handleLogin">
-        <div class="field">
-          <label for="login-username">用户名</label>
-          <input
-            id="login-username"
-            v-model.trim="username"
-            class="input"
-            type="text"
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-position="top"
+        class="form"
+        @submit.prevent="handleLogin"
+      >
+        <el-form-item label="用户名" prop="username">
+          <el-input
+            v-model.trim="form.username"
             placeholder="请输入用户名"
             autocomplete="username"
             :disabled="loading"
+            size="large"
           />
-        </div>
+        </el-form-item>
 
-        <div class="field">
-          <label for="login-password">密码</label>
-          <input
-            id="login-password"
-            v-model="password"
-            class="input"
+        <el-form-item label="密码" prop="password">
+          <el-input
+            v-model="form.password"
             type="password"
             placeholder="请输入密码"
             autocomplete="current-password"
             :disabled="loading"
+            size="large"
+            show-password
+            @keyup.enter="handleLogin"
           />
-        </div>
+        </el-form-item>
 
-        <p v-if="error" class="msg error">{{ error }}</p>
+        <el-alert
+          v-if="authError"
+          :title="authError"
+          type="error"
+          :closable="false"
+          show-icon
+          class="form-error"
+        />
 
-        <button class="btn btn-block" type="submit" :disabled="loading">
+        <el-button
+          type="primary"
+          size="large"
+          class="btn-block"
+          :loading="loading"
+          native-type="submit"
+        >
           {{ loading ? '登录中…' : '登录' }}
-        </button>
-      </form>
+        </el-button>
+      </el-form>
 
       <div class="panel-foot">
         <span>还没有账号？<router-link to="/register">注册成为船长</router-link></span>
@@ -51,7 +68,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import http from '../api'
 import { setAuth } from '../auth'
@@ -62,30 +79,37 @@ const router = useRouter()
 const isAdminEntry = computed(() => route.query.admin === '1')
 
 // 不再预填 admin：预填会让用户误以为只需输密码
-const username = ref('')
-const password = ref('')
+// 表单数据：用 reactive 对象承载，el-form 的 model 需要是对象
+const form = reactive({ username: '', password: '' })
+const formRef = ref(null)
 const loading = ref(false)
-const error = ref('')
+const authError = ref('')
+
+// 前端校验规则：只为提升体验，真正的校验在后端
+const rules = {
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+}
 
 async function handleLogin() {
-  if (!username.value || !password.value) {
-    error.value = '请输入用户名和密码'
-    return
-  }
+  authError.value = ''
+
+  // 先走表单校验，未通过则不请求
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
 
   loading.value = true
-  error.value = ''
   try {
     const data = await http.post('/api/login', {
-      username: username.value,
-      password: password.value
+      username: form.username,
+      password: form.password
     })
     setAuth(data)
 
     const redirect = route.query.redirect
     router.push(redirect || (data.is_admin ? '/admin' : '/me'))
   } catch (e) {
-    error.value = e.message || '登录失败'
+    authError.value = e.message || '登录失败'
   } finally {
     loading.value = false
   }

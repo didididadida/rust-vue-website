@@ -90,16 +90,16 @@ impl From<actix_multipart::MultipartError> for AppError {
     }
 }
 
-impl From<rusqlite::Error> for AppError {
-    fn from(e: rusqlite::Error) -> Self {
-        // 约束冲突单独映射成 409，前端可以据此给出更准确的提示
-        match &e {
-            rusqlite::Error::SqliteFailure(err, _)
-                if err.code == rusqlite::ffi::ErrorCode::ConstraintViolation =>
-            {
-                AppError::Conflict(format!("数据冲突: {}", e))
-            }
-            _ => AppError::Internal(format!("数据库错误: {}", e)),
+impl From<sea_orm::DbErr> for AppError {
+    fn from(e: sea_orm::DbErr) -> Self {
+        // 约束冲突单独映射成 409，前端可以据此给出更准确的提示。
+        // SeaORM 的 DbErr 不直接暴露 sqlite 错误码，只能按错误信息里的关键字判断。
+        let msg = e.to_string();
+        let lower = msg.to_lowercase();
+        if lower.contains("unique") || lower.contains("constraint") {
+            AppError::Conflict(format!("数据冲突: {msg}"))
+        } else {
+            AppError::Internal(format!("数据库错误: {msg}"))
         }
     }
 }
