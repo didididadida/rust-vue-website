@@ -87,10 +87,42 @@ const failed = ref(false)
 /**
  * Waline 服务地址
  *
- * 相对路径 /comments：同源、免 CORS、换域名不用改代码。
- * Nginx 中 /comments/ 反代到 waline-mini（127.0.0.1:8360）。
+ * **必须是绝对 URL，不能用相对路径。**
+ *
+ * 实测证据（在真实浏览器里对比三种写法）：
+ *   serverURL = '/comments'
+ *     字符串拼接     → '/comments/api/comment'      看起来对
+ *     new URL(x)     → ERR: Invalid URL             ← 没有 base 就构造失败
+ *     实际请求       → 'https:///comments/api/...'  ← 三个斜杠，必然失败
+ *
+ *   serverURL = location.origin + '/comments'
+ *     字符串拼接     → 'https://sakesoul.top/comments/api/comment'
+ *     new URL(x)     → 同样正确
+ *
+ * 为什么之前用相对路径不行：
+ *   Waline 内部用 new URL(serverURL) 构造地址（无 base 参数），
+ *   相对路径会抛 Invalid URL，最终降级成 'https:///...'，浏览器请求失败。
+ *
+ * 为什么要写成运行时计算而不是硬编码域名：
+ *   硬编码 'https://sakesoul.top/comments' 会让本地开发（localhost:5173）
+ *   也去打线上；用 location.origin 自动跟随当前域名。
+ *
+ * 依据：
+ *   经典问题：相对 URL 的基准解析（relative URL resolution base）
+ *   来源：WHATWG URL 标准 §4.4 basic URL parser
+ *     https://url.spec.whatwg.org/#concept-basic-url-parser
+ *     要点：相对 URL 必须提供 base；缺 base 时解析失败。
+ *   原型结论：
+ *     相对引用离开文档上下文就无法解析成绝对地址。
+ *   本处变体：
+ *     我的组件跑在浏览器里，本来有 location.origin 可用，
+ *     但传进 Waline 的只是一个字符串，那个字符串离开了上下文。
+ *   沿用结论：
+ *     传出去之前先补全成绝对 URL。
+ *   偏离处：
+ *     用 location.origin 而非固定域名，保留多环境（本地/线上）能力。
  */
-const SERVER_URL = '/comments'
+const SERVER_URL = `${window.location.origin}/comments`
 
 /** 评论归属路径：必须与迁移数据里的 url 一致（/blog/<slug>） */
 function pathOf(slug) {
@@ -98,53 +130,48 @@ function pathOf(slug) {
 }
 
 /**
- * 表情 CDN
+ * 表情来源：**本地静态目录，不依赖外网 CDN**
  *
- * 为什么不用上游 getEmojis 的写法：
- *   Valaxy 插件返回 `${cdn}@waline/emojis/${type}/`（目录路径），
- *   但 Waline 客户端实际请求的是该路径下的 info.json。
- *   实测 unpkg 的目录路径返回的是 HTML 页面（不是 JSON），
- *   客户端 JSON.parse 失败 → 抛 Failed to fetch，整个组件渲染中断。
+ * 为什么改成本地：
+ *   实测同一台机器上
+ *     命令行（走系统代理）  → unpkg.com 200
+ *     浏览器（不走代理）    → Failed to fetch
+ *   也就是说 unpkg.com 在这台机器的浏览器里根本连不上。
+ *   表情是锦上添花的功能，不应该因为它拖垮整个评论区，
+ *   更不应该让国内访客每次打开文章都发起三个注定失败的跨域请求。
  *
- * 修正：直接指向 info.json。
+ * 仓库里已经带了 bilibili 全套表情图（94 个 png），
+ * 放在 frontend/public/emojis/bilibili/，构建时原样发布到站点根。
+ * 只补了一个 info.json（Waline 需要它来知道有哪些表情、用什么前缀）。
+ *
+ * 为什么不用 qq / weibo 两套：
+ *   本地没有这两套图，硬配会 404。宁可少几套，不要带错误请求。
+ *   以后要加，把图放进 public/emojis/<name>/ 并补 info.json 即可。
  *
  * 依据：
- *   经典问题：静态资源路径的语义（目录 vs 文件）
- *   来源：实测 unpkg
- *     - /bilibili/          → text/html（目录列表页）
- *     - /bilibili/info.json → application/json（真实表情数据）
+ *   经典问题：第三方依赖的可用性边界（external dependency availability）
+ *   来源：本轮实测
+ *     浏览器内 fetch('https://unpkg.com/@waline/emojis@1.2.0/bilibili/info.json')
+ *       → {"err":"Failed to fetch"}
+ *     命令行 Invoke-WebRequest 同一 URL → 200 application/json
  *   原型结论：
- *     CDN 的目录索引页不等于目录内容；必须显式指定文件名。
+ *     命令行可达 ≠ 浏览器可达；两者的网络栈与代理设置不同。
  *   本处变体：
- *     上游插件在它自己的环境里能用（可能依赖 CDN 的自动重定向或
- *     客户端的不同版本行为），但当前组合下不行。
+ *     个人站部署在国内，访客网络环境更接近「浏览器不可达 unpkg」。
  *   沿用结论：
- *     直接给 info.json 的完整 URL，不依赖任何隐式重定向。
+ *     静态资源必须同源；跨域 CDN 只能作为可降级的增强。
  *   偏离处：
- *     表情的图片资源仍从同目录加载（info.json 里的 prefix + type 决定），
- *     这部分是 Waline 内部逻辑，不需要我们干预。
+ *     表情数量少于官方三套，但换来零失败请求。
+ *
+ * 返回值的格式：目录路径（不带 info.json），由 Waline 自己补后缀。
+ *   @waline/client@3.16.2 的 dist/waline.js 里有 `${e}/info.json`，
+ *   我们多传一层文件名会变成 .../info.json/info.json → 404。
  */
-const EMOJI_CDN = 'https://unpkg.com/@waline/emojis@1.2.0/'
-const EMOJI_TYPES = ['bilibili', 'qq', 'weibo']
+const EMOJI_SOURCES = [`${window.location.origin}/emojis/bilibili/`]
 
-/**
- * 返回表情目录路径（**不带 info.json**）
- *
- * 为什么不能带 info.json：
- *   Waline 客户端内部对每个表情源做 `${url}/info.json` 拼接。
- *   若我们传入的 URL 已含 info.json，实际请求会变成
- *     .../bilibili/info.json/info.json  → 404
- *   → JSON.parse 失败 → 抛 Failed to fetch → 整个评论组件渲染中断。
- *
- * 证据：
- *   @waline/client@3.16.2 的 dist/waline.js 里有：
- *     `${e}/info.json`
- *   即客户端会自己补这个后缀。
- */
 function getEmojis() {
-  return EMOJI_TYPES.map((t) => `${EMOJI_CDN}${t}/`)
+  return EMOJI_SOURCES
 }
-
 let instance = null
 let destroyed = false
 
@@ -160,8 +187,19 @@ function buildOptions() {
     lang: 'zh-CN',
     dark: 'html.dark',
     emoji: getEmojis(),
-    // 评论与浏览量分别由 commentCount/pageviewCount 处理，这里只开评论
-    comment: true,
+    /**
+     * 评论数统计 —— 关闭。
+     *
+     * Waline 的 `comment` 选项就是「评论数统计」（见 types 注释
+     * "评论数统计 / Comment number support"，默认 true）。
+     * 打开时它会请求 `?type=count`，而 waline-mini 没实现这个分支，
+     * 返回 400 + 纯文本 "Query deserialize error: missing field `page`"，
+     * 客户端按 JSON 解析就抛 "Unexpected token 'Q'"，污染控制台。
+     *
+     * 计数改由 loadCounts() 用列表接口的 count 字段取（返回结构里就有）。
+     */
+    comment: false,
+    // waline-mini 均未实现的三项，关掉避免 400 请求。
     pageview: false,
     reaction: false,
     search: false,
