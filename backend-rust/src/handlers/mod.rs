@@ -100,13 +100,15 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         // ---------- 项目 ----------
         .route("/api/toys", web::get().to(showcase::toys::list))
         .route("/api/toys", web::post().to(showcase::toys::create))
-        .route("/api/toys/{slug}", web::get().to(showcase::toys::get))
+        .route("/api/toys/batch-delete", web::post().to(showcase::toys::batch_delete))
+.route("/api/toys/{slug}", web::get().to(showcase::toys::get))
         .route("/api/toys/{slug}", web::put().to(showcase::toys::update))
         .route("/api/toys/{slug}", web::delete().to(showcase::toys::delete))
         // ---------- 工具 ----------
         .route("/api/tools", web::get().to(showcase::tools::list))
         .route("/api/tools", web::post().to(showcase::tools::create))
-        .route("/api/tools/{slug}", web::get().to(showcase::tools::get))
+        .route("/api/tools/batch-delete", web::post().to(showcase::tools::batch_delete))
+.route("/api/tools/{slug}", web::get().to(showcase::tools::get))
         .route("/api/tools/{slug}", web::put().to(showcase::tools::update))
         .route("/api/tools/{slug}", web::delete().to(showcase::tools::delete))
         // ---------- 私信 ----------

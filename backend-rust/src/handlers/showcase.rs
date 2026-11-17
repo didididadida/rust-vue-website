@@ -1,7 +1,7 @@
 //! 项目 / 工具接口
 //!
 //! 逻辑描述：
-//!   输入 → 输出：`/api/toys/*` 与 `/api/tools/*` 的 CRUD
+//!   输入 → 输出：`/api/toys/*` 与 `/api/tools/*` 的 CRUD + 批量删除
 //!   关键机制：
 //!     1. 两组接口共用 `services::showcase`，只靠 kind 区分；
 //!     2. 用宏避免为 toy / tool 各写一遍相同的 handler；
@@ -16,7 +16,7 @@
 //!   经典问题：重复代码消除（DRY）与单表继承的接口暴露
 //!   来源：
 //!     1. 本项目原实现 `handlers/toys.rs` 与 `handlers/tools.rs`：
-//!        两个文件约 80% 结构相同（列表/详情/新建/更新/删除）
+//!        两个文件约 80% 结构相同（列表/详情/新建/更新/删除/批量删除）
 //!     2. Rust 声明宏（macro_rules!）用于生成结构相同的函数
 //!        https://doc.rust-lang.org/reference/macros-by-example.html
 //!   原型结论：
@@ -28,8 +28,9 @@
 //!   沿用结论：保留 `/api/toys` 与 `/api/tools` 两条路径（前端依赖），
 //!             但内部用宏复用。
 //!   偏离处：
-//!     - 未做 `/batch-delete` 接口（旧前端有调用，但当前线上数据量小，
-//!       可以后续补；先保证主要 CRUD 可用）。
+//!     - 首页的 `scope` 过滤（home/community）未实现——
+//!       原实现靠作者字段判断，数据库化后暂未迁移该逻辑；
+//!       当前所有已发布项目都会出现在列表里。
 
 use actix_web::{web, HttpRequest, HttpResponse};
 use sea_orm::DatabaseConnection;
@@ -119,6 +120,7 @@ macro_rules! showcase_handlers {
                     items.iter().map(|x| x.without_content()).collect()
                 };
 
+                // 原接口返回纯数组（ListOut 序列化），前端直接当数组用
                 Ok(HttpResponse::Ok().json(ApiResponse::success(out)))
             }
 
@@ -232,6 +234,53 @@ macro_rules! showcase_handlers {
                 }
 
                 Ok(HttpResponse::Ok().json(ApiResponse::success(json!({ "deleted": true }))))
+            }
+
+            /// 批量删除
+            ///
+            /// 输入：`{ slugs: ["a", "b"] }`
+            /// 输出：`{ deleted: [...], failed: [{slug, error}] }`
+            ///
+            /// 关键机制：逐条删除并记录失败项，而不是一条失败就整个回滚。
+            /// 原因：前端会展示失败清单让用户知道哪几条没删掉。
+            pub async fn batch_delete(
+                db: web::Data<DatabaseConnection>,
+                body: web::Json<serde_json::Value>,
+                req: HttpRequest,
+            ) -> Result<HttpResponse, AppError> {
+                middleware::verify_admin(req)?;
+
+                let slugs: Vec<String> = body
+                    .get("slugs")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                if slugs.is_empty() {
+                    return Err(AppError::BadRequest("没有选中任何项".to_string()));
+                }
+
+                let mut deleted = Vec::new();
+                let mut failed = Vec::new();
+
+                for slug in slugs {
+                    match svc::delete(db.as_ref(), $kind, &slug).await {
+                        Ok(true) => deleted.push(slug),
+                        Ok(false) => {
+                            failed.push(json!({ "slug": slug, "error": "内容不存在" }))
+                        }
+                        Err(e) => failed.push(json!({ "slug": slug, "error": e.to_string() })),
+                    }
+                }
+
+                Ok(HttpResponse::Ok().json(ApiResponse::success(json!({
+                    "deleted": deleted,
+                    "failed": failed,
+                }))))
             }
         }
     };
