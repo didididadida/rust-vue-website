@@ -1,0 +1,42 @@
+[package]
+name = "wanle-backend"
+version = "0.1.0"
+edition = "2021"
+# 让 cargo 只挑选与本机 rustc 兼容的依赖版本（MSRV 感知解析）
+rust-version = "1.85"
+resolver = "3"
+
+# 数据全部存放在 Markdown / 纯文本文件中，不使用任何数据库。
+[dependencies]
+actix-web = "4"
+actix-multipart = "0.7"
+actix-files = "0.6"
+actix-cors = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+jsonwebtoken = "9"
+bcrypt = "0.15"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+dotenvy = "0.15"
+log = "0.4"
+env_logger = "0.11"
+futures-util = "0.3"
+
+# 数据：文章/评论仍是 Markdown/JSON 文件；论坛使用 SQLite（见 db.rs）
+# bundled: 把 SQLite 源码静态编译进二进制，目标机无需额外装库
+rusqlite = { version = "0.32", features = ["bundled"] }
+r2d2 = "0.8"                    # 连接池，避免每请求都开库
+r2d2_sqlite = "0.25"
+
+# 邮箱验证码注册
+sha2 = "0.10"                                    # 验证码只存哈希
+# tokio1: actix-web 用 tokio 运行时，必须开这个 feature 才能用 AsyncSmtpTransport
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls-tls", "builder", "tokio1", "tokio1-rustls-tls"] }
+
+# 图片处理：上传时无损重编码 + 列表缩略图
+# 只开实际用到的解码/编码器，避免把 HEIF/AVIF 那套重型依赖拖进来
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+# 判断 GIF 是否为动图（数帧），动图不能重编码，否则会变成静图
+gif = "0.13"

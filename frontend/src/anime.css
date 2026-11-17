@@ -1,0 +1,281 @@
+/* ==========================================================================
+   二次元主题（B 站式）
+   --------------------------------------------------------------------------
+   与全站「科技宇宙风」的区别：
+   - 科技风靠 CSS 画星点/扫描线/霓虹光，二次元风靠**真实图片**承载视觉
+   - 这里的任务是：让图片当主角，UI 作为半透明层浮在上面
+   - 关键手法：整页壁纸 + backdrop-filter 毛玻璃卡片 + 极淡的暗色蒙层
+   - 刻意**不**使用发光、渐变描边、扫描线这类"花里胡哨"的装饰
+
+   用法：给页面根元素加 class="anime-page" 和 data-bg="community|profile"
+   ========================================================================== */
+
+/* ---------- 壁纸层 ---------- */
+/* 用伪元素铺满视口，而不是给 body 加背景：
+   这样只有这两个页面有壁纸，其他页面保持原样 */
+.anime-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  /* position:fixed + 伪元素，滚动时壁纸不动，内容在其上滑动 */
+  will-change: transform;
+}
+
+/* 暗色蒙层：保证文字可读，同时让壁纸还看得清 */
+.anime-page::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 10, 18, 0.62) 0%,
+    rgba(8, 10, 18, 0.78) 45%,
+    rgba(8, 10, 18, 0.92) 100%
+  );
+  pointer-events: none;
+}
+
+.anime-page[data-bg='community']::before {
+  background-image: url('/anime/bg-community.jpg');
+}
+
+.anime-page[data-bg='profile']::before {
+  background-image: url('/anime/bg-profile.jpg');
+}
+
+/* 移动端用更小的图，省流量 */
+@media (max-width: 820px) {
+  .anime-page[data-bg='community']::before {
+    background-image: url('/anime/bg-community-sm.jpg');
+  }
+  .anime-page[data-bg='profile']::before {
+    background-image: url('/anime/bg-profile-sm.jpg');
+  }
+}
+
+/* 二次元页面里，页脚与顶栏要做成半透明，让壁纸透出来 */
+.anime-page ~ * .footer {
+  background: transparent;
+}
+
+/* ==========================================================================
+   毛玻璃卡片：这些页面里所有"卡片"统一用玻璃质感
+   ========================================================================== */
+.anime-page .glass {
+  background: rgba(16, 20, 32, 0.42);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+}
+
+/* ==========================================================================
+   毛玻璃卡片
+   --------------------------------------------------------------------------
+   性能说明：
+     backdrop-filter 需要把元素背后的所有内容重新采样模糊，是浏览器里
+     最昂贵的属性之一；页面上同时存在几十个时会显著拖慢滚动与交互。
+
+     策略：只保留"需要透出壁纸"的关键大块（卡片、面板）的模糊，
+     模糊半径降到 10px 以内；列表项等大量重复的元素改用纯半透明背景，
+     视觉上几乎一样，但不再触发逐帧重新模糊。
+   ========================================================================== */
+.anime-page .glass {
+  background: rgba(16, 20, 32, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+}
+
+/* 重复出现的列表项：用足够实的底色代替模糊，省掉大部分 GPU 开销 */
+.anime-page .card,
+.anime-page .post-item,
+.anime-page .article-item,
+.anime-page .log-item,
+.anime-page .conv-item,
+.anime-page .bubble {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.anime-page .glass:hover {
+  background: rgba(22, 27, 42, 0.62);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* 如果用户系统关了毛玻璃效果（部分浏览器/低配设备），回退到更实的背景 */
+@supports not (backdrop-filter: blur(1px)) {
+  .anime-page .glass {
+    background: rgba(16, 20, 32, 0.86);
+  }
+}
+
+/* 用户偏好减少动效时，彻底关掉模糊 */
+@media (prefers-reduced-motion: reduce) {
+  .anime-page .glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(16, 20, 32, 0.88);
+  }
+}
+
+/* ==========================================================================
+   二次元页面的文字与元素：降低科技感，提升柔感
+   ========================================================================== */
+
+/* 标题：去掉渐变发光，改成干净的白 + 轻微阴影（阴影帮助在图片上保持清晰） */
+.anime-page .page-title {
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+}
+
+.anime-page .page-subtitle,
+.anime-page .eyebrow {
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+
+.anime-page .eyebrow {
+  color: rgba(160, 220, 255, 0.9);
+}
+
+/* 分区标题的竖条：从冷光改为柔和的粉白 */
+.anime-page .section-title {
+  color: #fff;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
+}
+
+.anime-page .section-title::before {
+  background: linear-gradient(180deg, #ffd1e8, rgba(255, 209, 232, 0.1));
+  box-shadow: 0 0 8px rgba(255, 160, 200, 0.5);
+}
+
+/* 标签：柔和描边，不要霓虹 */
+.anime-page .tag {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(4px);
+}
+
+.anime-page .tag:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* 按钮：半透明白，而不是高饱和渐变 */
+.anime-page .btn {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.anime-page .btn:hover {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #fff;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+  transform: translateY(-2px);
+}
+
+.anime-page .btn-outline {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.anime-page .btn-outline:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+}
+
+/* 输入框：玻璃底 */
+.anime-page .input,
+.anime-page .plain-input,
+.anime-page select.plain-input {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  backdrop-filter: blur(8px);
+}
+
+.anime-page .input::placeholder,
+.anime-page .plain-input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.anime-page .input:focus,
+.anime-page .plain-input:focus {
+  border-color: rgba(255, 255, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+
+/* 编辑器容器也玻璃化 */
+.anime-page .expanded-body,
+.anime-page .fake-input {
+  background: rgba(10, 14, 24, 0.55) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  backdrop-filter: blur(12px);
+}
+
+.anime-page .toolbar {
+  background: rgba(255, 255, 255, 0.05);
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 空态与提示 */
+.anime-page .empty-state,
+.anime-page .empty-log,
+.anime-page .no-reply,
+.anime-page .login-hint {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(10px);
+}
+
+/* 分页与统计文字 */
+.anime-page .pager-info,
+.anime-page .more-link,
+.anime-page .stat-label {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.anime-page .more-link:hover {
+  color: #fff;
+}
+
+/* ==========================================================================
+   壁纸出现时的淡入，避免生硬弹出
+   ========================================================================== */
+.anime-page::before {
+  animation: animeFadeIn 0.9s ease-out both;
+}
+
+@keyframes animeFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anime-page::before {
+    animation: none;
+  }
+}

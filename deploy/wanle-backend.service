@@ -1,0 +1,55 @@
+# =============================================================================
+# wanle —— 后端服务单元
+#
+# 安装：
+#   cp deploy/wanle-backend.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now wanle-backend
+#
+# 说明：
+#   - WorkingDirectory 必须是 backend-rust/，因为 paths::root() 默认取 ".."
+#     若在项目根目录启动，内容目录会指到项目外面，表现为"文章全没了"
+#   - Restart=always 保证进程崩溃后自动拉起；systemd 自带指数退避，
+#     不会出现疯狂重启打满 CPU 的情况
+#   - .env 由后端自己用 dotenvy 从工作目录的上级加载，无需在这里设 EnvironmentFile
+# =============================================================================
+
+[Unit]
+Description=Wanle backend (Rust actix-web blog API)
+Documentation=https://your-domain.com/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+WorkingDirectory=/root/wanle/backend-rust
+ExecStart=/root/wanle/backend-rust/target/release/wanle-backend
+
+# 崩溃自动重启
+Restart=always
+RestartSec=3
+# 限制重启频率：10 秒内最多 5 次，超过则进入 failed 状态便于发现
+StartLimitIntervalSec=10
+StartLimitBurst=5
+
+# 日志走 journald，用 journalctl -u wanle-backend -f 查看
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wanle-backend
+
+# 基础加固
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+# 必须允许写这些目录：内容、数据、上传
+ReadWritePaths=/root/wanle/posts /root/wanle/data /root/wanle/static
+
+# 优雅停止：先 SIGTERM，10 秒内没退出再 SIGKILL
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,55 @@
+# Render Blueprint —— 一键部署演示实例（免费层）
+#
+# 用法：
+#   1. 在 https://dashboard.render.com/blueprints 新建 Blueprint
+#   2. 选择本仓库，Render 会读取这个文件
+#   3. 部署完成后得到 https://wanle-demo.onrender.com
+#
+# 免费层的限制（务必知悉，这不是配置问题）：
+#   - 15 分钟无访问会休眠，下次请求要冷启动几秒到一分钟
+#   - 无持久磁盘：重启/重新部署后，写入的文章、评论、上传图片全部重置
+#   - 因此本实例只适合"看看长什么样"，不适合真正用来写作
+#
+# 依据：
+#   经典问题：无状态容器部署（stateless container deployment）
+#   来源：Render 官方文档 Free 实例说明
+#        https://render.com/docs/free
+#        "Free web services have an ephemeral filesystem... any changes to
+#         your web service's filesystem are lost every time the service
+#         redeploys, restarts, or spins down."
+#   原型结论：
+#     1. 免费层无法挂载持久磁盘，容器内文件写入不可长期保存；
+#     2. 服务必须在 0.0.0.0:$PORT 上监听，否则平台探测不到端口。
+#   本处变体：本项目的"数据库"就是文件（Markdown + JSON + SQLite），
+#             没有外部托管数据库可依赖，所以持久化能力完全取决于平台。
+#   沿用结论：把演示定位为只读预览，数据写入视为可丢失。
+#   偏离处：未接入 Render 托管 Postgres——项目本身不依赖 Postgres，
+#           强行接入需要重写整个存储层，与"演示"目的不成比例。
+services:
+  - type: web
+    name: wanle-demo
+    runtime: docker
+    dockerfilePath: ./backend-rust/Dockerfile
+    dockerContext: .
+    plan: free
+    region: singapore
+    healthCheckPath: /api/health
+    envVars:
+      # 平台注入 PORT，程序会自动绑 0.0.0.0:$PORT
+      - key: RUST_LOG
+        value: info
+      # 演示实例用固定密钥（重启不掉登录）；正式使用请改成随机长字符串
+      - key: JWT_SECRET
+        value: demo-only-secret-change-me-in-production-0123456789abcdef
+      # 管理员账号
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      # 静态资源与内容根目录（Dockerfile 里已设，这里显式声明便于阅读）
+      - key: WANLE_ROOT
+        value: /app
+      # CORS：允许 GitHub Pages 展示页跨域读取 API
+      # 部署 Pages 后建议改成具体域名，收窄放行范围
+      - key: CORS_ORIGINS
+        value: "*"

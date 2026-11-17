@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rust + Vue 个人博客系统</title>
+  <meta name="description" content="用 Rust + actix-web 与 Vue 3 + Vite 构建的个人博客系统，开源项目展示。" />
+  <style>
+    :root {
+      --bg: #08090d;
+      --surface: #111318;
+      --border: #23262f;
+      --text: #e8ecf1;
+      --muted: #8b93a1;
+      --accent: #4cc9f0;
+      --accent-2: #7b6cf6;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                   "Microsoft YaHei", sans-serif;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre {
+      font-family: "SF Mono", Consolas, "Courier New", monospace;
+      font-size: 0.86em;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+    /* ---------- 头部 ---------- */
+    header {
+      padding: 88px 0 64px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+      background: radial-gradient(ellipse 70% 60% at 50% 0%, rgba(76,201,240,0.10), transparent);
+    }
+    .eyebrow {
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.32em;
+      color: var(--accent);
+      margin-bottom: 20px;
+      text-transform: uppercase;
+    }
+    h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 18px;
+      background: linear-gradient(120deg, #fff 0%, var(--accent) 45%, var(--accent-2) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 620px;
+      margin: 0 auto 32px;
+    }
+    .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 32px; }
+    .badge {
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 0.72rem;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+    }
+    .badge.rust { color: #f7a41d; border-color: rgba(247,164,29,0.3); }
+    .badge.vue { color: #42b883; border-color: rgba(66,184,131,0.3); }
+    .badge.mit { color: var(--ok); border-color: rgba(74,222,128,0.3); }
+
+    .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 24px;
+      border-radius: 10px;
+      font-size: 0.92rem;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      transition: all 0.18s ease;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+    .btn.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-color: transparent;
+      color: #06080d;
+      font-weight: 600;
+    }
+    .btn.primary:hover { filter: brightness(1.12); color: #06080d; }
+
+    /* ---------- 章节 ---------- */
+    section { padding: 64px 0; border-bottom: 1px solid var(--border); }
+    section:last-of-type { border-bottom: none; }
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 650;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+    .section-desc { color: var(--muted); margin-bottom: 28px; font-size: 0.94rem; }
+
+    /* ---------- 功能卡片 ---------- */
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .card {
+      padding: 22px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      transition: border-color 0.18s ease, transform 0.18s ease;
+    }
+    .card:hover { border-color: rgba(76,201,240,0.35); transform: translateY(-2px); }
+    .card h3 {
+      font-size: 0.98rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card p { color: var(--muted); font-size: 0.86rem; line-height: 1.65; }
+    .icon { font-size: 1.1rem; }
+
+    /* ---------- 架构图 ---------- */
+    .arch {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .arch-box {
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      text-align: center;
+    }
+    .arch-box h4 { font-size: 0.86rem; margin-bottom: 6px; color: var(--accent); font-weight: 600; }
+    .arch-box p { font-size: 0.78rem; color: var(--muted); line-height: 1.6; }
+    .arrow { text-align: center; color: var(--muted); font-size: 1.2rem; margin: 8px 0; }
+
+    /* ---------- 代码块 ---------- */
+    pre {
+      background: #0b0d12;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      overflow-x: auto;
+      line-height: 1.75;
+      color: #c8d3e0;
+    }
+    .step { margin-bottom: 22px; }
+    .step-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--accent);
+    }
+
+    /* ---------- 演示 ---------- */
+    .demo-notice {
+      padding: 14px 18px;
+      border-radius: 10px;
+      background: rgba(251,191,36,0.08);
+      border: 1px solid rgba(251,191,36,0.28);
+      color: var(--warn);
+      font-size: 0.85rem;
+      margin-bottom: 20px;
+      line-height: 1.7;
+    }
+    .demo-notice strong { color: var(--warn); }
+    #demo-status {
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 0.82rem;
+      padding: 12px 16px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      margin-bottom: 18px;
+    }
+    #article-list { display: flex; flex-direction: column; gap: 10px; }
+    .article-item {
+      padding: 14px 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+    }
+    .article-item .t { font-weight: 550; font-size: 0.92rem; }
+    .article-item .m { color: var(--muted); font-size: 0.78rem; font-family: "SF Mono", monospace; }
+    .empty-hint { color: var(--muted); font-size: 0.88rem; padding: 18px 0; }
+
+    /* ---------- 表格 ---------- */
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
+    td code { color: var(--accent); }
+
+    footer {
+      padding: 40px 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 700px) {
+      header { padding: 56px 0 40px; }
+      section { padding: 44px 0; }
+      .arch { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="eyebrow">Open Source Project</p>
+    <h1>Rust + Vue 网站项目</h1>
+    <p class="subtitle">
+      一个不依赖数据库 ORM、不引入 UI 组件库的个人博客系统。
+      文章存 Markdown 文件，评论存 JSON，上传记录存 SQLite。
+    </p>
+    <div class="badges">
+      <span class="badge rust">Rust 1.85+</span>
+      <span class="badge rust">actix-web 4</span>
+      <span class="badge vue">Vue 3</span>
+      <span class="badge vue">Vite 5</span>
+      <span class="badge mit">MIT License</span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/didididadida/rust-vue-website" target="_blank" rel="noopener">
+        查看源码
+      </a>
+      <a class="btn" href="#demo">在线演示</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>核心功能</h2>
+    <p class="section-desc">只做博客需要的事，不加多余的东西</p>
+    <div class="grid">
+      <div class="card">
+        <h3><span class="icon">📝</span> Markdown 写作</h3>
+        <p>文章即文件。YAML front matter 记录标题、分类、标签，正文用标准 Markdown，可直接用任意编辑器打开。</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">✏️</span> 全屏纯文本编辑</h3>
+        <p>后台可直接编辑整个 .md 文件含元数据块，保存前校验 YAML，格式错误拒绝写入，不会写坏文章。</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">💬</span> 嵌套评论</h3>
+        <p>支持多级回复、待审核队列、B 站风格编辑器，可直接粘贴截图自动上传。</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">🖼️</span> 内置图床</h3>
+        <p>图片无损重编码，支持粘贴与拖拽上传，上传记录用 SQLite 索引，按上传者筛选。</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">🔐</span> JWT 认证</h3>
+        <p>bcrypt 密码哈希、邮箱验证码注册、登录失败限速（用户名 + IP 双维度）。</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">📊</span> 行内编辑后台</h3>
+        <p>文章表格支持直接改别名、分类、切换发布状态，批量删除，无需逐个打开弹窗。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>架构</h2>
+    <p class="section-desc">前后端分离，静态资源与 API 分离部署</p>
+    <div class="arch">
+      <div class="arch-box">
+        <h4>前端</h4>
+        <p>Vue 3 + Vite<br>vue-router · axios<br>marked · highlight.js</p>
+      </div>
+      <div class="arch-box">
+        <h4>后端</h4>
+        <p>Rust + actix-web 4<br>JWT · bcrypt<br>rusqlite</p>
+      </div>
+      <div class="arch-box">
+        <h4>存储</h4>
+        <p>Markdown 文件<br>JSON 文件<br>SQLite（上传记录）</p>
+      </div>
+    </div>
+    <div class="arrow">↓ Nginx 反代 /api/ 与 /static/ ↓</div>
+    <table>
+      <thead>
+        <tr><th>内容</th><th>位置</th><th>为什么</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>文章</td><td><code>posts/*.md</code></td><td>单人低频写，要人能直接看、要能 Git 版本化</td></tr>
+        <tr><td>评论</td><td><code>data/comments/&lt;slug&gt;.json</code></td><td>每篇一个数组，无需数据库</td></tr>
+        <tr><td>上传记录</td><td><code>data/wanle.db</code></td><td>高频写，需按上传者筛选，索引比遍历目录快</td></tr>
+        <tr><td>用户</td><td><code>data/users.txt</code></td><td>一行一个，安全敏感、格式稳定</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>快速开始</h2>
+    <p class="section-desc">需要 Rust 1.85+ 与 Node.js 18+</p>
+
+    <div class="step">
+      <div class="step-title">1. 配置</div>
+      <pre>cp .env.example .env
+# 至少设置 JWT_SECRET；ADMIN_PASSWORD 留空则随机生成</pre>
+    </div>
+
+    <div class="step">
+      <div class="step-title">2. 启动后端</div>
+      <pre>cd backend-rust
+cargo run
+# http://127.0.0.1:8000</pre>
+    </div>
+
+    <div class="step">
+      <div class="step-title">3. 启动前端</div>
+      <pre>cd frontend
+npm install
+npm run dev
+# http://127.0.0.1:5173，/api 自动代理到 8000</pre>
+    </div>
+
+    <div class="step">
+      <div class="step-title">4. 生产构建</div>
+      <pre>cd frontend && npm run build
+cd ../backend-rust && cargo build --release</pre>
+    </div>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="wrap">
+    <h2>在线演示</h2>
+    <p class="section-desc">部署在 Render 免费层，下面是实时从演示后端拉取的文章列表</p>
+
+    <div class="demo-notice">
+      <strong>演示实例的限制：</strong>
+      免费层无持久磁盘，<strong>重启后会重置所有数据</strong>；15 分钟无访问会休眠，
+      首次访问需等待冷启动（可能数十秒）。这个实例只用于展示界面，不适合真正写作。
+    </div>
+
+    <div id="demo-status">正在连接演示后端…</div>
+    <div id="article-list"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>
+      <a href="https://github.com/didididadida/rust-vue-website" target="_blank" rel="noopener">GitHub</a>
+      · MIT License
+      · Rust + Vue
+    </p>
+  </div>
+</footer>
+
+<script>
+  // 演示后端地址：Render 部署完成后把这里改成实际域名，
+  // 例如 https://wanle-demo.onrender.com。
+  // 留空时显示「未配置」提示，不会报错。
+  const API_BASE = '';
+
+  const statusEl = document.getElementById('demo-status');
+  const listEl = document.getElementById('article-list');
+
+  function setStatus(text, color) {
+    statusEl.textContent = text;
+    statusEl.style.color = color || '';
+  }
+
+  async function loadArticles() {
+    if (!API_BASE) {
+      setStatus('演示后端尚未部署。部署后把本页 API_BASE 改成 Render 域名即可。', 'var(--muted)');
+      listEl.innerHTML =
+        '<p class="empty-hint">部署步骤见仓库 README：使用 render.yaml 一键创建服务，' +
+        '再把返回的域名填到这里。</p>';
+      return;
+    }
+
+    setStatus('正在唤醒演示后端（免费层冷启动可能要几十秒）…', 'var(--warn)');
+
+    try {
+      const res = await fetch(API_BASE + '/api/articles?limit=10', {
+        // 跨域：后端需要允许本页来源，否则浏览器会拦截
+        mode: 'cors'
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      const items = (json && json.data) || [];
+
+      setStatus('已连接 · 共 ' + items.length + ' 篇文章', 'var(--ok)');
+
+      if (!items.length) {
+        listEl.innerHTML = '<p class="empty-hint">演示库暂无公开文章。</p>';
+        return;
+      }
+
+      listEl.innerHTML = items.map(function (a) {
+        const date = (a.created_at || '').slice(0, 10);
+        return (
+          '<div class="article-item">' +
+          '<span class="t">' + escapeHtml(a.title || a.slug) + '</span>' +
+          '<span class="m">' + escapeHtml(date) + '</span>' +
+          '</div>'
+        );
+      }).join('');
+    } catch (e) {
+      setStatus('连接失败：' + e.message, 'var(--warn)');
+      listEl.innerHTML =
+        '<p class="empty-hint">可能是：① 后端未部署 ② 服务正在冷启动 ③ 后端未开启 CORS。' +
+        '稍后刷新重试。</p>';
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  loadArticles();
+</script>
+
+</body>
+</html>

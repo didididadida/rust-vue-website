@@ -1,0 +1,45 @@
+# 构建上下文收敛：只保留镜像真正需要的东西
+# 依据：Docker 官方「Build context」文档——上下文越小，构建传输越快；
+#       https://docs.docker.com/build/building/context/
+
+# 前端产物与依赖不进后端镜像
+frontend/node_modules
+frontend/dist
+frontend/src
+frontend/public
+frontend/package.json
+frontend/package-lock.json
+frontend/vite.config.js
+frontend/index.html
+frontend/scripts
+
+# 本地构建产物
+backend-rust/target
+target
+
+# 版本库与编辑器
+.git
+.gitignore
+.vscode
+.idea
+
+# 文档与示例
+README.md
+LICENSE
+*.md
+
+# 运行时数据（镜像里另从 posts/data/static 拷贝）
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/users.txt
+data/verifications.json
+data/profiles
+static/uploads/*
+static/thumbs
+!static/uploads/.gitkeep
+
+# 部署与脚本
+deploy
+scripts
+nginx

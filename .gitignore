@@ -1,0 +1,28 @@
+target/
+node_modules/
+dist/
+*.tar.gz
+
+# 本地配置与运行时数据（不要提交）
+.env
+data/users.txt
+static/uploads/*
+!static/uploads/.gitkeep
+
+# 论坛 SQLite：属于运行时数据，含用户发言，不进版本库
+# （WAL 模式下还有 -wal / -shm 两个伴随文件，一并忽略）
+data/forum.db
+data/forum.db-wal
+data/forum.db-shm
+
+# 用户资料与验证码记录
+data/profiles/
+data/verifications.json
+
+# 缩略图缓存：内容由原图决定，可随时删除重建（后端会自动补）
+static/thumbs/
+
+
+# Python 脚本的字节码缓存
+__pycache__/
+*.pyc
