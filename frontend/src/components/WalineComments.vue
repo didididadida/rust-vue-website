@@ -100,14 +100,35 @@ function pathOf(slug) {
 /**
  * 表情 CDN
  *
- * 照抄上游 utils/getEmojis 的默认值：三套表情包。
- * 用 unpkg 的 @waline/emojis 包。
+ * 为什么不用上游 getEmojis 的写法：
+ *   Valaxy 插件返回 `${cdn}@waline/emojis/${type}/`（目录路径），
+ *   但 Waline 客户端实际请求的是该路径下的 info.json。
+ *   实测 unpkg 的目录路径返回的是 HTML 页面（不是 JSON），
+ *   客户端 JSON.parse 失败 → 抛 Failed to fetch，整个组件渲染中断。
+ *
+ * 修正：直接指向 info.json。
+ *
+ * 依据：
+ *   经典问题：静态资源路径的语义（目录 vs 文件）
+ *   来源：实测 unpkg
+ *     - /bilibili/          → text/html（目录列表页）
+ *     - /bilibili/info.json → application/json（真实表情数据）
+ *   原型结论：
+ *     CDN 的目录索引页不等于目录内容；必须显式指定文件名。
+ *   本处变体：
+ *     上游插件在它自己的环境里能用（可能依赖 CDN 的自动重定向或
+ *     客户端的不同版本行为），但当前组合下不行。
+ *   沿用结论：
+ *     直接给 info.json 的完整 URL，不依赖任何隐式重定向。
+ *   偏离处：
+ *     表情的图片资源仍从同目录加载（info.json 里的 prefix + type 决定），
+ *     这部分是 Waline 内部逻辑，不需要我们干预。
  */
-const EMOJI_CDN = 'https://unpkg.com/'
+const EMOJI_CDN = 'https://unpkg.com/@waline/emojis@1.2.0/'
 const EMOJI_TYPES = ['bilibili', 'qq', 'weibo']
 
 function getEmojis() {
-  return EMOJI_TYPES.map((t) => `${EMOJI_CDN}@waline/emojis/${t}/`)
+  return EMOJI_TYPES.map((t) => `${EMOJI_CDN}${t}/info.json`)
 }
 
 let instance = null
