@@ -260,6 +260,7 @@ docker run -p 8000:8000 -e BIND_ADDR=0.0.0.0:8000 wanle-backend
 |---|---|
 | [README.md](README.md) | 项目介绍、快速开始、接口一览（本文） |
 | [docs/运维手册.md](docs/运维手册.md) | 部署、systemd、Nginx、备份恢复、故障排查 |
+| [docs/Waline评论部署.md](docs/Waline评论部署.md) | 评论服务（waline-mini）部署与前端接入 |
 | [data/README.md](data/README.md) | 内容文件格式（文章、评论、用户表） |
 | [在线站点](https://sakesoul.top/) | 本项目实际部署的站点 |
 | [展示页](https://didididadida.github.io/rust-vue-website/) | GitHub Pages 静态介绍 |
