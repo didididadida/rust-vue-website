@@ -1,6 +1,10 @@
 # 构建上下文收敛：只保留镜像真正需要的东西
 # 依据：Docker 官方「Build context」文档——上下文越小，构建传输越快；
 #       https://docs.docker.com/build/building/context/
+#
+# 注意：排除规则会沿用到子目录。`*.md` 会连 data/README.md 一起排除，
+# 而 Dockerfile 需要 COPY data 目录（哪怕里面只有一个 README），
+# 排空后 COPY 会因「目录不存在」失败。所以 data/posts 下的 .md 必须保留。
 
 # 前端产物与依赖不进后端镜像
 frontend/node_modules
@@ -23,23 +27,25 @@ target
 .vscode
 .idea
 
-# 文档与示例
-README.md
-LICENSE
-*.md
+# 根目录文档（不影响镜像内容）
+/README.md
+/LICENSE
+/docs
 
-# 运行时数据（镜像里另从 posts/data/static 拷贝）
+# 运行时数据：不进镜像（镜像里的 data 只需保留目录结构与格式说明）
 data/*.db
 data/*.db-wal
 data/*.db-shm
 data/users.txt
 data/verifications.json
 data/profiles
-static/uploads/*
-static/thumbs
-!static/uploads/.gitkeep
 
-# 部署与脚本
+# 上传的文件不进镜像，只保留占位
+static/uploads/*
+!static/uploads/.gitkeep
+static/thumbs
+
+# 部署与脚本不需要进后端镜像
 deploy
 scripts
 nginx

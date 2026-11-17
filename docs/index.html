@@ -206,6 +206,47 @@
     .article-item .m { color: var(--muted); font-size: 0.78rem; font-family: "SF Mono", monospace; }
     .empty-hint { color: var(--muted); font-size: 0.88rem; padding: 18px 0; }
 
+    /* ---------- 部署指引 ---------- */
+    .setup-steps {
+      padding: 20px 22px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .setup-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+    .setup-list {
+      margin: 0 0 14px 0;
+      padding-left: 20px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.9;
+    }
+    .setup-list li { margin-bottom: 6px; }
+    .setup-list code {
+      background: #0b0d12;
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: var(--accent);
+    }
+    .setup-note {
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.75;
+    }
+    .setup-note code {
+      background: #0b0d12;
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: var(--accent);
+    }
+
     /* ---------- 表格 ---------- */
     table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
     th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
@@ -395,10 +436,20 @@ cd ../backend-rust && cargo build --release</pre>
 
   async function loadArticles() {
     if (!API_BASE) {
-      setStatus('演示后端尚未部署。部署后把本页 API_BASE 改成 Render 域名即可。', 'var(--muted)');
+      setStatus('演示后端待部署 · 以下为部署指引', 'var(--warn)');
       listEl.innerHTML =
-        '<p class="empty-hint">部署步骤见仓库 README：使用 render.yaml 一键创建服务，' +
-        '再把返回的域名填到这里。</p>';
+        '<div class="setup-steps">' +
+        '<p class="setup-title">三步启用在线演示：</p>' +
+        '<ol class="setup-list">' +
+        '<li>打开 <a href="https://dashboard.render.com/blueprints/new" target="_blank" rel="noopener">Render Blueprints</a>，' +
+        '选择本仓库，Render 会自动读取 <code>render.yaml</code>，点击 Apply。</li>' +
+        '<li>等待构建完成（Rust 首次编译约 5-10 分钟），得到形如 ' +
+        '<code>https://wanle-demo.onrender.com</code> 的域名。</li>' +
+        '<li>把该域名填入本页脚本的 <code>API_BASE</code> 常量，重新部署 Pages。</li>' +
+        '</ol>' +
+        '<p class="setup-note">因为本页是静态托管，无法在浏览器里直接完成上述步骤。' +
+        '你也可以在本地 <code>docker build -f backend-rust/Dockerfile -t wanle .</code> 自行验证镜像。</p>' +
+        '</div>';
       return;
     }
 
