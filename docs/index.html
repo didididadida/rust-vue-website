@@ -170,102 +170,59 @@
       color: var(--accent);
     }
 
-    /* ---------- 演示 ---------- */
-    .demo-notice {
-      padding: 14px 18px;
-      border-radius: 10px;
-      background: rgba(251,191,36,0.08);
-      border: 1px solid rgba(251,191,36,0.28);
-      color: var(--warn);
-      font-size: 0.85rem;
-      margin-bottom: 20px;
-      line-height: 1.7;
-    }
-    .demo-notice strong { color: var(--warn); }
-    #demo-status {
-      font-family: "SF Mono", Consolas, monospace;
-      font-size: 0.82rem;
-      padding: 12px 16px;
-      border-radius: 8px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      margin-bottom: 18px;
-    }
-    #article-list { display: flex; flex-direction: column; gap: 10px; }
-    .article-item {
-      padding: 14px 18px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
+    /* ---------- 在线站点跳转卡片 ---------- */
+    .live-card {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      gap: 14px;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 24px 28px;
+      background: linear-gradient(135deg, rgba(76,201,240,0.08), rgba(123,108,246,0.08));
+      border: 1px solid rgba(76,201,240,0.28);
+      border-radius: 16px;
+      transition: all 0.2s ease;
     }
-    .article-item .t { font-weight: 550; font-size: 0.92rem; }
-    .article-item .m { color: var(--muted); font-size: 0.78rem; font-family: "SF Mono", monospace; }
-    .empty-hint { color: var(--muted); font-size: 0.88rem; padding: 18px 0; }
+    .live-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      text-decoration: none;
+      box-shadow: 0 10px 30px rgba(76,201,240,0.12);
+    }
+    .live-left { display: flex; align-items: center; gap: 16px; }
+    .live-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 10px var(--ok);
+      flex-shrink: 0;
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+    .live-title {
+      font-size: 1.15rem;
+      font-weight: 650;
+      color: var(--text);
+      margin-bottom: 4px;
+      font-family: "SF Mono", Consolas, monospace;
+    }
+    .live-sub { font-size: 0.84rem; color: var(--muted); }
+    .live-arrow {
+      font-size: 1.4rem;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+    .live-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.8;
+    }
 
     /* ---------- 部署指引 ---------- */
-    .setup-steps {
-      padding: 20px 22px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-    }
-    .setup-title {
-      font-size: 0.9rem;
-      font-weight: 600;
-      margin-bottom: 12px;
-      color: var(--text);
-    }
-    .setup-list {
-      margin: 0 0 14px 0;
-      padding-left: 20px;
-      color: var(--muted);
-      font-size: 0.86rem;
-      line-height: 1.9;
-    }
-    .setup-list li { margin-bottom: 6px; }
-    .setup-list code {
-      background: #0b0d12;
-      padding: 1px 6px;
-      border-radius: 4px;
-      color: var(--accent);
-    }
-    .setup-note {
-      padding-top: 12px;
-      border-top: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 0.82rem;
-      line-height: 1.75;
-    }
-    .setup-note code {
-      background: #0b0d12;
-      padding: 1px 6px;
-      border-radius: 4px;
-      color: var(--accent);
-    }
-
-    /* ---------- 表格 ---------- */
-    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
-    th { color: var(--muted); font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
-    td code { color: var(--accent); }
-
-    footer {
-      padding: 40px 0;
-      text-align: center;
-      color: var(--muted);
-      font-size: 0.82rem;
-      border-top: 1px solid var(--border);
-    }
-
-    @media (max-width: 700px) {
-      header { padding: 56px 0 40px; }
-      section { padding: 44px 0; }
-      .arch { grid-template-columns: 1fr; }
-    }
   </style>
 </head>
 <body>
@@ -397,16 +354,25 @@ cd ../backend-rust && cargo build --release</pre>
 <section id="demo">
   <div class="wrap">
     <h2>在线演示</h2>
-    <p class="section-desc">部署在 Render 免费层，下面是实时从演示后端拉取的文章列表</p>
+    <p class="section-desc">这个项目已经部署上线，可以直接访问真实站点体验完整功能</p>
 
-    <div class="demo-notice">
-      <strong>演示实例的限制：</strong>
-      免费层无持久磁盘，<strong>重启后会重置所有数据</strong>；15 分钟无访问会休眠，
-      首次访问需等待冷启动（可能数十秒）。这个实例只用于展示界面，不适合真正写作。
-    </div>
+    <a class="live-card" href="https://sakesoul.top/" target="_blank" rel="noopener">
+      <div class="live-left">
+        <span class="live-dot"></span>
+        <div>
+          <div class="live-title">sakesoul.top</div>
+          <div class="live-sub">真实运行的站点 · 含文章、评论、图床与后台</div>
+        </div>
+      </div>
+      <span class="live-arrow">↗</span>
+    </a>
 
-    <div id="demo-status">正在连接演示后端…</div>
-    <div id="article-list"></div>
+    <p class="live-note">
+      线上站点部署在腾讯云轻量服务器，Nginx + systemd 托管，数据存本地文件与 SQLite，
+      与本仓库代码同源。修改代码后按
+      <a href="https://github.com/didididadida/rust-vue-website/blob/main/docs/%E8%BF%90%E7%BB%B4%E6%89%8B%E5%86%8C.md" target="_blank" rel="noopener">运维手册</a>
+      的步骤重新构建部署即可。
+    </p>
   </div>
 </section>
 
@@ -420,82 +386,6 @@ cd ../backend-rust && cargo build --release</pre>
   </div>
 </footer>
 
-<script>
-  // 演示后端地址：Render 部署完成后把这里改成实际域名，
-  // 例如 https://wanle-demo.onrender.com。
-  // 留空时显示「未配置」提示，不会报错。
-  const API_BASE = '';
-
-  const statusEl = document.getElementById('demo-status');
-  const listEl = document.getElementById('article-list');
-
-  function setStatus(text, color) {
-    statusEl.textContent = text;
-    statusEl.style.color = color || '';
-  }
-
-  async function loadArticles() {
-    if (!API_BASE) {
-      setStatus('演示后端待部署 · 以下为部署指引', 'var(--warn)');
-      listEl.innerHTML =
-        '<div class="setup-steps">' +
-        '<p class="setup-title">三步启用在线演示：</p>' +
-        '<ol class="setup-list">' +
-        '<li>打开 <a href="https://dashboard.render.com/blueprints/new" target="_blank" rel="noopener">Render Blueprints</a>，' +
-        '选择本仓库，Render 会自动读取 <code>render.yaml</code>，点击 Apply。</li>' +
-        '<li>等待构建完成（Rust 首次编译约 5-10 分钟），得到形如 ' +
-        '<code>https://wanle-demo.onrender.com</code> 的域名。</li>' +
-        '<li>把该域名填入本页脚本的 <code>API_BASE</code> 常量，重新部署 Pages。</li>' +
-        '</ol>' +
-        '<p class="setup-note">因为本页是静态托管，无法在浏览器里直接完成上述步骤。' +
-        '你也可以在本地 <code>docker build -f backend-rust/Dockerfile -t wanle .</code> 自行验证镜像。</p>' +
-        '</div>';
-      return;
-    }
-
-    setStatus('正在唤醒演示后端（免费层冷启动可能要几十秒）…', 'var(--warn)');
-
-    try {
-      const res = await fetch(API_BASE + '/api/articles?limit=10', {
-        // 跨域：后端需要允许本页来源，否则浏览器会拦截
-        mode: 'cors'
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const json = await res.json();
-      const items = (json && json.data) || [];
-
-      setStatus('已连接 · 共 ' + items.length + ' 篇文章', 'var(--ok)');
-
-      if (!items.length) {
-        listEl.innerHTML = '<p class="empty-hint">演示库暂无公开文章。</p>';
-        return;
-      }
-
-      listEl.innerHTML = items.map(function (a) {
-        const date = (a.created_at || '').slice(0, 10);
-        return (
-          '<div class="article-item">' +
-          '<span class="t">' + escapeHtml(a.title || a.slug) + '</span>' +
-          '<span class="m">' + escapeHtml(date) + '</span>' +
-          '</div>'
-        );
-      }).join('');
-    } catch (e) {
-      setStatus('连接失败：' + e.message, 'var(--warn)');
-      listEl.innerHTML =
-        '<p class="empty-hint">可能是：① 后端未部署 ② 服务正在冷启动 ③ 后端未开启 CORS。' +
-        '稍后刷新重试。</p>';
-    }
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
-
-  loadArticles();
-</script>
 
 </body>
 </html>

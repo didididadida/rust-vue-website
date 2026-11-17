@@ -217,9 +217,9 @@ docker build -f backend-rust/Dockerfile -t wanle-backend .
 docker run -p 8000:8000 -e BIND_ADDR=0.0.0.0:8000 wanle-backend
 ```
 
-### Render（免费演示实例）
+### Render（可选，免费实例）
 
-仓库根目录的 `render.yaml` 可直接用于 [Render Blueprint](https://dashboard.render.com/blueprints) 一键部署。
+仓库根目录的 `render.yaml` 可用于 [Render Blueprint](https://dashboard.render.com/blueprints) 一键创建免费实例。
 
 **免费层的限制**（平台限制，非本项目问题）：
 
@@ -228,7 +228,7 @@ docker run -p 8000:8000 -e BIND_ADDR=0.0.0.0:8000 wanle-backend
 | 无持久磁盘 | 重启/重新部署后，写入的文章、评论、上传图片**全部重置** |
 | 15 分钟无访问休眠 | 下次请求冷启动需数秒到一分钟 |
 
-因此 Render 实例只适合展示界面，不适合真正用来写作。要长期使用请部署到有持久存储的服务器。
+免费实例只适合临时演示界面，不适合真正写作。长期使用请部署到有持久存储的服务器。
 
 ### 环境变量补充
 
@@ -241,17 +241,18 @@ docker run -p 8000:8000 -e BIND_ADDR=0.0.0.0:8000 wanle-backend
 
 ## 在线展示
 
-`docs/index.html` 是 GitHub Pages 展示页，启用方式：
+本项目已部署上线：**<https://sakesoul.top/>** —— 可访问真实站点体验完整功能。
 
-1. 仓库 Settings → Pages
-2. Source 选 `Deploy from a branch`
-3. Branch 选 `main`，目录选 `/docs`
-4. 保存后访问 `https://<用户名>.github.io/rust-vue-website/`
+`docs/index.html` 是 GitHub Pages 上的静态展示页，用于介绍项目并提供跳转到线上站点的入口：
 
-展示页会实时调用后端 `/api/articles`。部署后端后，把 `docs/index.html` 里的 `API_BASE`
-改成后端域名即可显示真实文章列表。
+| 项 | 值 |
+|---|---|
+| 展示页地址 | <https://didididadida.github.io/rust-vue-website/> |
+| 启用方式 | 仓库 Settings → Pages → Source 选 `main` 分支的 `/docs` 目录 |
+| 内容 | 功能列表、架构图、存储设计、快速开始、跳转线上站点 |
 
-> GitHub Pages 只托管静态文件，不能运行后端——这是平台限制。要完整的可交互演示需要单独部署后端。
+> GitHub Pages 只托管静态文件，不能运行后端。所以展示页不内嵌活数据，
+> 而是提供一个跳转到线上真实站点的入口。
 
 ## 文档
 
@@ -260,7 +261,8 @@ docker run -p 8000:8000 -e BIND_ADDR=0.0.0.0:8000 wanle-backend
 | [README.md](README.md) | 项目介绍、快速开始、接口一览（本文） |
 | [docs/运维手册.md](docs/运维手册.md) | 部署、systemd、Nginx、备份恢复、故障排查 |
 | [data/README.md](data/README.md) | 内容文件格式（文章、评论、用户表） |
-| [在线展示页](https://didididadida.github.io/rust-vue-website/) | GitHub Pages 静态介绍 |
+| [在线站点](https://sakesoul.top/) | 本项目实际部署的站点 |
+| [展示页](https://didididadida.github.io/rust-vue-website/) | GitHub Pages 静态介绍 |
 
 ## 主要接口
 
