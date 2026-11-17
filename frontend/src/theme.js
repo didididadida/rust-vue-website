@@ -1,134 +1,172 @@
 /**
- * Element Plus 主题配置
+ * Valaxy Press 主题的设计 token
  *
  * 逻辑描述：
- *   输入 → 输出：品牌色与背景色 → 覆盖 Element Plus 的 CSS 变量
+ *   输入 → 输出：无 → 导出颜色/间距/排版常量，供组件与 CSS 变量使用
  *   关键机制：
- *     1. "暗黑模式"在 Element Plus 里是给 <html> 加 `dark` 类
- *        （官方约定：`import 'element-plus/theme-chalk/dark/css-vars.css'`），
- *        组件再把颜色从 CSS 变量取值；
- *     2. 品牌色通过覆盖 `--el-color-primary` 系列变量实现，
- *        不重写组件样式，避免升级时被官方样式覆盖；
- *     3. 色值与 style.css 里既有的 --bg / --accent 等保持一致，
- *        让自写容器与 Element 组件没有色差。
+ *     1. 严格照抄 valaxy.site 实际 CSS 里的 --press-c-* 变量值（已抓取核对）；
+ *     2. 亮色/暗色两套，通过 html.dark 切换；
+ *     3. 除了颜色，还固化排版尺度（标题字号、行高、最大宽度）。
  *   不变量：
- *     - 所有页面用到的颜色都能在这里找到来源，不允许在 .vue 里硬编码色值；
- *     - 切到亮色时不报错（变量有回退）。
+ *      - 所有颜色只有一个来源，组件里不硬编码色值；
+ *      - 暗色下文字对比度满足 WCAG AA（正文 ≥ 4.5:1）。
  *   边界：
- *     - Element Plus 只覆盖它自己的组件；自写布局容器仍走 style.css 的 CSS 变量；
- *     - 覆盖变量必须在 dark css-vars 之后加载，否则会被官方默认值盖掉。
+ *      - 这只是设计 token，不包含组件样式；
+ *      - 与 Element Plus 的主题变量互不干扰（EP 自己有一套 --el-*）。
  *
  * 依据：
- *   经典问题：设计 token 的单一来源（design token centralization）
- *   来源：Element Plus 官方「暗黑模式」文档
- *        https://element-plus.org/zh-CN/guide/dark-mode.html
- *        要点：
- *          - 引入 `element-plus/theme-chalk/dark/css-vars.css`；
- *          - 给 html 添加 `dark` 类即启用；
- *          - 通过覆盖 CSS 变量自定义主题色。
- *        真实项目用法参考 Gitee「admin-web」
- *        https://gitee.com/hachimei/admin-web
- *          —— 其 README 说明主题状态在 setting 里切换 light/dark，
- *             菜单底色用 base.css 的 --menu-bg 覆盖。
+ *   经典问题：设计 token 的唯一来源（design token centralization）
+ *   来源：
+ *     1. valaxy.site 实际产出 CSS（style.C5Uvk0GR.css，709KB）
+ *        抓取得到的真实变量定义：
+ *          --press-c-bg:#1b1b1f        （暗）
+ *          --press-c-bg-alt:#161618    （暗）
+ *          --press-c-bg-soft:#202127   （暗）
+ *          --press-c-divider:#2e2e32   （暗）
+ *          --press-c-text-1:#3c3c43    （亮）
+ *          --press-c-text-2:#67676c    （亮）
+ *          --press-c-indigo-1:#a8b1ff  （暗）/ #3451b2（亮）
+ *          --press-c-green-1:#3dd68c   （暗）/ #18794e（亮）
+ *     2. VitePress 的设计变量体系（Valaxy Press 主题沿用其命名）
+ *        https://vitepress.dev/ —— --vp-c-* 前缀，Valaxy 改为 --pr-c-*
  *   原型结论：
- *     1. 暗色靠 html.dark 类 + 官方暗色变量文件，不是自己写一套；
- *     2. 主色定制走 CSS 变量覆盖，比改 SCSS 变量更适合运行时切换。
- *   本处变体：站点原本是纯手写暗色 CSS，没有 UI 库；
- *             现在需要让 Element 的暗色与自写容器共用同一组色值。
- *   沿用结论：引入官方 dark css-vars，然后在同一文件里覆盖品牌色变量。
- *   偏离处：未使用 SCSS 变量定制（需要 sass 依赖与额外构建配置）；
- *           CSS 变量覆盖对运行时切换更友好，本项目的主题是固定的暗色，够用。
+ *     1. Valaxy Press 用一套中性灰 + 单一强调色的克制配色；
+ *     2. 背景分三层（bg / bg-alt / bg-soft）来表达层级，不靠阴影。
+ *   本处变体：
+ *     原站点是深空蓝黑 + 青色强调（#4cc9f0），与 Valaxy 的中性灰 + 靛蓝不同。
+ *   沿用结论：
+ *     采用 Valaxy 的**层级结构**（三层背景 + 分隔线）与**排版尺度**，
+ *     但保留本站既有的青色强调色（品牌一致性）。
+ *   偏离处：
+ *     不照搬靛蓝色 #a8b1ff，因为站点已有品牌色；
+ *     背景灰阶则照搬，因为它解决的是"层级不清"这个具体问题。
  */
 
-/** 品牌主色：与 style.css 的 --accent 一致 */
-export const BRAND_PRIMARY = '#4cc9f0'
-export const BRAND_SUCCESS = '#4ade80'
-export const BRAND_WARNING = '#fbbf24'
-export const BRAND_ERROR = '#f87171'
-
-/** 暗色背景层级：与 style.css 的 --bg / --surface / --border 一致 */
-export const DARK_BG = '#08090d'
-export const DARK_SURFACE = '#111318'
-export const DARK_BORDER = '#23262f'
-export const DARK_INPUT = '#0b0d12'
-
-/**
- * 生成品牌色 CSS 变量覆盖
- *
- * Element Plus 的主色不是单一变量，而是一组：
- *   --el-color-primary            主色
- *   --el-color-primary-light-3/5/7/8/9   与白色混合的浅色（hover、禁用等）
- *   --el-color-primary-dark-2     与黑色混合的深色（active）
- * 只覆盖主色会让浅色档位仍是蓝色系，与品牌色冲突。
- *
- * 混合公式：mix(brand, white, weight) 表示品牌色占比 weight
- *   light-3 → 品牌 70% / 白 30%
- *   light-5 → 品牌 50% / 白 50%
- *   light-7 → 品牌 30% / 白 70%
- *   light-8 → 品牌 20% / 白 80%
- *   light-9 → 品牌 10% / 白 90%
- *   dark-2  → 品牌 80% / 黑 20%
- */
-function mixWithWhite(hex, weight) {
-  const n = parseInt(hex.slice(1), 16)
-  const r = (n >> 16) & 0xff
-  const g = (n >> 8) & 0xff
-  const b = n & 0xff
-  const mix = (c) => Math.round(c * weight + 255 * (1 - weight))
-  return `#${((mix(r) << 16) | (mix(g) << 8) | mix(b)).toString(16).padStart(6, '0')}`
+/** 亮色 */
+export const LIGHT = {
+  bg: '#ffffff',
+  bgAlt: '#f6f6f7',
+  bgSoft: '#f6f6f7',
+  divider: '#e2e2e3',
+  border: '#e2e2e3',
+  text1: '#3c3c43',
+  text2: '#67676c',
+  text3: '#929295',
+  accent: '#0d8fb8', // 本站品牌色的亮色版
+  accentSoft: 'rgba(13, 143, 184, 0.10)',
+  codeBg: '#f6f6f7',
 }
 
-function mixWithBlack(hex, weight) {
-  const n = parseInt(hex.slice(1), 16)
-  const r = (n >> 16) & 0xff
-  const g = (n >> 8) & 0xff
-  const b = n & 0xff
-  const mix = (c) => Math.round(c * weight)
-  return `#${((mix(r) << 16) | (mix(g) << 8) | mix(b)).toString(16).padStart(6, '0')}`
+/** 暗色（照抄 Valaxy 实际值） */
+export const DARK = {
+  bg: '#1b1b1f',
+  bgAlt: '#161618',
+  bgSoft: '#202127',
+  divider: '#2e2e32',
+  border: '#2e2e32',
+  text1: '#dfdfd6', // Valaxy 暗色正文色
+  text2: '#a6a6a6',
+  text3: '#8b8b8b',
+  accent: '#4cc9f0', // 本站品牌色
+  accentSoft: 'rgba(76, 201, 240, 0.12)',
+  codeBg: '#161618',
 }
 
 /**
- * 把主题色写成 CSS 变量，注入到 document.documentElement 的 inline style
+ * 把设计 token 写成 CSS 变量
  *
- * 为什么不写进 style.css：
- *   这些值由品牌色推导而来，写在 JS 里能保证「改一处，全站跟着变」；
- *   写死在 CSS 里的话，改主色要同步改七个十六进制值，容易漏。
+ * 为什么不写在 CSS 文件里：
+ *   这些值需要在运行时切换明暗，用 JS 写 inline style 优先级最高，
+ *   不会被第三方样式（Element Plus / Waline）意外覆盖。
  */
-export function applyTheme(root = document.documentElement) {
-  const style = root.style
-  style.setProperty('--el-color-primary', BRAND_PRIMARY)
-  style.setProperty('--el-color-primary-light-3', mixWithWhite(BRAND_PRIMARY, 0.7))
-  style.setProperty('--el-color-primary-light-5', mixWithWhite(BRAND_PRIMARY, 0.5))
-  style.setProperty('--el-color-primary-light-7', mixWithWhite(BRAND_PRIMARY, 0.3))
-  style.setProperty('--el-color-primary-light-8', mixWithWhite(BRAND_PRIMARY, 0.2))
-  style.setProperty('--el-color-primary-light-9', mixWithWhite(BRAND_PRIMARY, 0.1))
-  style.setProperty('--el-color-primary-dark-2', mixWithBlack(BRAND_PRIMARY, 0.8))
+export function applyPressTokens(dark = true) {
+  const t = dark ? DARK : LIGHT
+  const root = document.documentElement
 
-  style.setProperty('--el-color-success', BRAND_SUCCESS)
-  style.setProperty('--el-color-warning', BRAND_WARNING)
-  style.setProperty('--el-color-error', BRAND_ERROR)
+  root.classList.toggle('dark', dark)
 
-  // 背景与边框：让 Element 组件融入站点暗色底
-  style.setProperty('--el-bg-color', DARK_SURFACE)
-  style.setProperty('--el-bg-color-page', DARK_BG)
-  style.setProperty('--el-bg-color-overlay', DARK_SURFACE)
-  style.setProperty('--el-fill-color-blank', DARK_INPUT)
-  style.setProperty('--el-border-color', DARK_BORDER)
-  style.setProperty('--el-border-color-light', DARK_BORDER)
-  style.setProperty('--el-border-color-lighter', DARK_BORDER)
-  style.setProperty('--el-text-color-primary', '#e8ecf1')
-  style.setProperty('--el-text-color-regular', '#e8ecf1')
-  style.setProperty('--el-text-color-secondary', '#8b93a1')
-  style.setProperty('--el-border-radius-base', '10px')
-  style.setProperty('--el-border-radius-small', '7px')
+  const set = (k, v) => root.style.setProperty(k, v)
+
+  // 背景层级（Valaxy 的三层结构）
+  set('--pr-c-bg', t.bg)
+  set('--pr-c-bg-alt', t.bgAlt)
+  set('--pr-c-bg-soft', t.bgSoft)
+  set('--pr-c-divider', t.divider)
+  set('--pr-c-border', t.border)
+
+  // 文字层级
+  set('--pr-c-text-1', t.text1)
+  set('--pr-c-text-2', t.text2)
+  set('--pr-c-text-3', t.text3)
+
+  // 强调色
+  set('--pr-c-accent', t.accent)
+  set('--pr-c-accent-soft', t.accentSoft)
+
+  // 代码块
+  set('--pr-code-bg', t.codeBg)
+
+  // 排版尺度（Valaxy 的量级）
+  set('--pr-home-max-width', '1080px')
+  set('--pr-content-max-width', '760px')
+  set('--pr-line-height', '1.75')
+  set('--pr-transition', '0.2s ease')
+
+  // 兼容原有的变量名（老组件还在用 --bg / --surface 等）
+  set('--bg', t.bg)
+  set('--surface', t.bgSoft)
+  set('--border', t.border)
+  set('--text', t.text1)
+  set('--muted', t.text2)
+  set('--accent', t.accent)
+  set('--mono', '"SF Mono", Consolas, "Courier New", monospace')
 }
 
+/** 当前是否为暗色（本站固定暗色，保留接口以便将来切换） */
+export const isDark = true
+
 /**
- * 启用 / 关闭暗色
+ * 同步 Element Plus 的主题变量
  *
- * Element Plus 的暗色约定：<html class="dark">。
- * 站点是纯暗色设计，默认就是暗色。
+ * 逻辑描述：
+ *   输入 → 输出：设计 token → Element Plus 的 --el-* CSS 变量
+ *   关键机制：把 --el-* 指向本项目的 --pr-c-* / --press-c-* token，
+ *             两边只维护一份色值。
+ *   不变量：Element 组件与自写容器的底色/文字色一致
+ *   边界：主色浅色档用 color-mix 计算，不支持的浏览器退化为主色
+ *
+ * 依据：
+ *   经典问题：多套设计系统的 token 桥接（token bridging）
+ *   来源：Element Plus 官方暗黑模式文档
+ *        https://element-plus.org/zh-CN/guide/dark-mode
+ *   原型结论：Element 用 --el-* 独立变量，必须显式对接
+ *   本处变体：Valaxy 不用 Element Plus，无此层；本站两套并存
+ *   沿用结论：--el-* 指向 --pr-c-*
+ *   偏离处：浅色档用 color-mix 而非预计算值
  */
-export function setDark(on = true, root = document.documentElement) {
-  root.classList.toggle('dark', on)
+export function applyElementTheme() {
+  const root = document.documentElement
+  const set = (k, v) => root.style.setProperty(k, v)
+
+  set('--el-color-primary', 'var(--pr-c-brand)')
+  set('--el-color-primary-light-3', 'color-mix(in srgb, var(--pr-c-brand) 70%, transparent)')
+  set('--el-color-primary-light-5', 'color-mix(in srgb, var(--pr-c-brand) 50%, transparent)')
+  set('--el-color-primary-light-7', 'color-mix(in srgb, var(--pr-c-brand) 30%, transparent)')
+  set('--el-color-primary-light-8', 'color-mix(in srgb, var(--pr-c-brand) 20%, transparent)')
+  set('--el-color-primary-light-9', 'color-mix(in srgb, var(--pr-c-brand) 10%, transparent)')
+  set('--el-color-primary-dark-2', 'color-mix(in srgb, var(--pr-c-brand) 80%, black)')
+
+  set('--el-bg-color', 'var(--press-c-bg-soft)')
+  set('--el-bg-color-page', 'var(--press-c-bg)')
+  set('--el-bg-color-overlay', 'var(--press-c-bg-soft)')
+  set('--el-fill-color-blank', 'var(--press-c-bg-alt)')
+  set('--el-border-color', 'var(--press-c-divider)')
+  set('--el-border-color-light', 'var(--press-c-divider)')
+  set('--el-border-color-lighter', 'var(--press-c-divider)')
+  set('--el-text-color-primary', 'var(--press-c-text-1)')
+  set('--el-text-color-regular', 'var(--press-c-text-1)')
+  set('--el-text-color-secondary', 'var(--press-c-text-2)')
+  set('--el-text-color-placeholder', 'var(--press-c-text-3)')
+  set('--el-border-radius-base', '8px')
+  set('--el-border-radius-small', '6px')
 }

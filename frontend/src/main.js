@@ -105,13 +105,13 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import App from './App.vue'
 import router from './router'
 import { warmupSanitizer } from './markdown'
-import { applyTheme, setDark } from './theme'
+import { applyPressTokens, applyElementTheme } from './theme'
 import './style.css'
 import './anime.css'
 
 // 主题在创建应用前就位，避免首帧闪烁出默认蓝色
-applyTheme()
-setDark(true)
+applyPressTokens(true)
+applyElementTheme()
 
 const components = [
   ElButton,

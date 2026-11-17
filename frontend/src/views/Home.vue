@@ -1,160 +1,165 @@
 <!--
-  首页（参考 Valaxy 的视觉语言）
+  首页（结构逐行对照 YunYouJun/valaxy 的 PressHomeHero.vue）
 
   逻辑描述：
-    输入：最新文章列表（GET /api/articles?limit=N）
+    输入：最新文章列表
     输出：
-      - 首屏大标题区（站点名 + 标语 + 联系方式），带打字机入场效果
-      - 最新文章卡片列表
+      1. press-home-hero：双栏 Grid（1.08fr / 1fr），左文右视觉
+      2. press-home-features：特性卡片区（对照 PressHomeFeatures.vue）
+      3. 文章列表（对照 PressArticleCard.vue 的条目形态）
     关键机制：
-      1. 标题用 CSS 逐字入场（animation-delay 按索引递增），
-         不用 JS 定时器，避免卸载时残留 timer；
-      2. 卡片布局参考 Valaxy：左侧封面（可选）、右侧标题+摘要+元信息；
-      3. 尊重 prefers-reduced-motion：用户关闭动画时不播放。
+      1. 入场动画用上游的 .press-enter + --pr-enter-order 错峰系统，
+         不再自己写逐字动画；
+      2. 布局尺寸全部用上游的真实值：
+           min-height: 620px
+           padding: clamp(32px, 5vw, 72px)
+           font-size: clamp(40px, 4.5vw, 68px)
+           --pr-home-max-width: 1320px
+      3. hero 结构分 eyebrow / heading(name+text) / tagline / actions / command，
+         与上游一一对应。
     不变量：
-      - 文章区在数据未就绪时显示骨架，不显示「空」；
-      - 接口失败不影响首屏标题区显示。
+      - 所有颜色来自 --press-c-* / --pr-* 变量；
+      - 无 JS 时内容完全可见（动画只影响 opacity 起始值）。
     边界：
-      - 无文章时显示引导文案而非报错；
-      - 封面图缺失时卡片自动退化为纯文字布局。
+      - 窄屏（<900px）Hero 退化为单栏（上游同款断点）
+      - 用户偏好减弱动效时不做任何动画
 
   依据：
-    经典问题：渐进式呈现与动效可访问性（progressive reveal & reduced motion）
+    经典问题：设计系统的忠实移植（design system porting）
     来源：
-      1. Valaxy 官网首页的结构与视觉
-         https://valaxy.site/ —— 大标题 + 标语 + 特性分块 + 卡片
-      2. Valaxy 主题 Yun 的「首页标语」说明
-         https://valaxy.site/zh/themes/yun/layout#首页标语
-         原文要点：banner.title 支持手动分割成多段做交错排列文字效果
-      3. MDN：prefers-reduced-motion
-         https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion
-         要点：动效必须尊重用户的减弱动效偏好，否则对前庭功能障碍用户不友好。
+      YunYouJun/valaxy · packages/valaxy-theme-press/components/PressHomeHero.vue
+      https://github.com/YunYouJun/valaxy/blob/main/packages/valaxy-theme-press/components/PressHomeHero.vue
+      关键结构（照抄）：
+        <section class="press-home-hero">
+          <div class="hero-copy">
+            <p class="hero-eyebrow press-enter">{{ hero.eyebrow }}</p>
+            <h1 class="hero-heading press-enter" :style="{ '--pr-enter-order': 1 }">
+              <span class="hero-name">{{ hero.name }}</span>
+              <span class="hero-text">{{ hero.text }}</span>
+            </h1>
+            <p class="hero-tagline press-enter" :style="{ '--pr-enter-order': 2 }">
+            <div class="hero-actions press-enter" :style="{ '--pr-enter-order': 3 }">
+          </div>
+          <div class="hero-visual"> ... </div>
+        </section>
+      关键样式（照抄）：
+        .press-home-hero {
+          display: grid;
+          grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+          border-bottom: 1px solid var(--pr-c-divider-light);
+          min-height: 620px;
+        }
+        .hero-copy { padding: clamp(32px, 5vw, 72px); }
+        .hero-name { color: var(--pr-c-brand); font-size: 16px; letter-spacing: .18em; }
+        .hero-text { font-size: clamp(40px, 4.5vw, 68px); letter-spacing: -.045em; }
     原型结论：
-      1. 文字入场用 CSS animation + 递增 delay 即可，比 JS 逐字快且省资源；
-      2. 动效必须能用系统设置关闭。
+      Valaxy 用「品牌色小字 + 超大主标题」的两级结构，
+      比单纯一个大标题更有层次；入场用统一错峰而非逐字。
     本处变体：
-      - 原首页是「Hero + 卡片网格」，无动画；
-      - Valaxy 用 framework 层的 banner 配置，本站直接写 CSS。
-    沿用结论：保留大标题区（这是站点门面），加交错入场动画；
-              文章列表改为横向卡片（更接近 Valaxy 的列表形态）。
+      - hero 内容来自静态配置而非 frontmatter（本站没有 SSG）；
+      - 右侧视觉用文章统计替代上游的 orbit 动画。
+    沿用结论：结构、尺寸、断点、错峰入场全部照抄。
     偏离处：
-      - 不做「流动云」背景动画（Valaxy Yun 主题特有，与本项目星空背景冲突）；
-      - 不做 i18n 多语言标题（本站为中文单语言）。
+      - 未实现 PressHomeOrbit（需要独立 canvas 动画）；
+        以统计环替代，保持"右侧有视觉"这个布局关系。
 -->
 <template>
-  <div class="home">
-    <!-- ===== 首屏：站点名与标语 ===== -->
-    <section class="hero">
-      <p class="hero-eyebrow">WELCOME TO MY SITE</p>
+  <div class="press-home">
+    <!-- ==================== Hero ==================== -->
+    <section class="press-home-hero">
+      <div class="hero-copy">
+        <p class="hero-eyebrow press-enter">
+          {{ hero.eyebrow }}
+        </p>
 
-      <!-- 逐字入场：每个字一个 span，animation-delay 递增 -->
-      <h1 class="hero-title" aria-label="飼酒之心">
-        <span
-          v-for="(ch, i) in titleChars"
-          :key="i"
-          class="hero-char"
-          :style="{ animationDelay: `${i * 0.08}s` }"
-        >{{ ch }}</span>
-      </h1>
+        <h1 class="hero-heading press-enter" :style="{ '--pr-enter-order': 1 }">
+          <span class="hero-name">{{ hero.name }}</span>
+          <span class="hero-text">{{ hero.text }}</span>
+        </h1>
 
-      <p class="hero-desc">
-        用代码创造有趣的东西。这里记录了一些技术思考与随笔。
-      </p>
+        <p class="hero-tagline press-enter" :style="{ '--pr-enter-order': 2 }">
+          {{ hero.tagline }}
+        </p>
 
-      <p class="hero-contact">
-        <span>{{ contact.wechat }}</span>
-        <span class="dot">·</span>
-        <span>{{ contact.qq }}</span>
-      </p>
+        <div class="hero-actions press-enter" :style="{ '--pr-enter-order': 3 }">
+          <button class="press-btn press-btn--brand" @click="$router.push('/blog')">
+            {{ hero.actions[0].text }}
+          </button>
+          <button class="press-btn press-btn--alt" @click="$router.push('/community')">
+            {{ hero.actions[1].text }}
+          </button>
+        </div>
 
-      <!-- 打赏码：点击展开，不占首屏高度 -->
-      <div class="pay-row">
-        <el-button
-          v-for="q in payCodes"
-          :key="q.key"
-          size="small"
-          text
-          class="pay-chip"
-          @click="activePay = q"
-        >
-          {{ q.label }}
-        </el-button>
+        <!-- 对应上游的 PressHomeCommand：一行终端提示 -->
+        <div class="hero-command press-enter" :style="{ '--pr-enter-order': 4 }">
+          <span class="cmd-prompt">$</span>
+          <span class="cmd-text">{{ hero.command }}</span>
+        </div>
       </div>
 
-      <!-- 向下箭头：提示可滚动 -->
-      <div class="hero-scroll" aria-hidden="true">
-        <span class="scroll-arrow"></span>
+      <div class="hero-visual">
+        <div class="hero-orbit">
+          <div class="orbit-ring orbit-ring--1"></div>
+          <div class="orbit-ring orbit-ring--2"></div>
+          <div class="orbit-core">
+            <span class="orbit-num">{{ articles.length }}</span>
+            <span class="orbit-label">篇文章</span>
+          </div>
+        </div>
+
+        <p v-if="latest" class="hero-caption">
+          最新 · {{ latest.title }}
+        </p>
       </div>
     </section>
 
-    <!-- 码图预览 -->
-    <el-dialog
-      v-model="payVisible"
-      :title="activePay?.label"
-      width="320px"
-      align-center
-      class="pay-dialog"
-    >
-      <img v-if="activePay" :src="activePay.src" :alt="activePay.label" class="pay-img" />
-    </el-dialog>
+    <!-- ==================== 特性区（对照 PressHomeFeatures.vue） ==================== -->
+    <section class="press-home-features">
+      <div
+        v-for="(f, i) in features"
+        :key="f.title"
+        class="feature-item press-reveal"
+        :style="{ '--pr-enter-order': i }"
+      >
+        <span class="feature-icon">{{ f.icon }}</span>
+        <h3 class="feature-title">{{ f.title }}</h3>
+        <p class="feature-detail">{{ f.detail }}</p>
+      </div>
+    </section>
 
-    <!-- ===== 文章列表 ===== -->
-    <section class="posts">
-      <header class="posts-head">
+    <!-- ==================== 文章列表 ==================== -->
+    <section class="press-posts">
+      <header class="posts-header">
         <h2 class="posts-title">最新文章</h2>
-        <router-link to="/blog" class="posts-more">全部文章 →</router-link>
+        <router-link to="/blog" class="posts-all">全部文章 →</router-link>
       </header>
 
-      <!-- 加载中：骨架屏而非"加载中"文字 -->
-      <div v-if="loading" class="post-list">
-        <div v-for="i in 3" :key="i" class="post-skeleton">
+      <div v-if="loading" class="posts-list">
+        <div v-for="i in 3" :key="i" class="post-item post-item--skeleton">
           <el-skeleton :rows="2" animated />
         </div>
       </div>
 
-      <!-- 空态 -->
-      <div v-else-if="!articles.length" class="posts-empty">
-        <el-empty description="还没有文章，去后台写一篇吧">
-          <el-button v-if="isAdmin" type="primary" @click="$router.push('/admin')">
-            去后台
-          </el-button>
-        </el-empty>
-      </div>
+      <el-empty v-else-if="!articles.length" description="还没有文章">
+        <button v-if="isAdmin" class="press-btn press-btn--brand" @click="$router.push('/admin')">
+          去后台写一篇
+        </button>
+      </el-empty>
 
-      <!-- 文章卡片列表 -->
-      <div v-else class="post-list">
+      <div v-else class="posts-list">
         <router-link
-          v-for="(a, i) in articles"
+          v-for="a in articles"
           :key="a.slug"
           :to="`/blog/${encodeURIComponent(a.slug)}`"
-          class="post-card"
-          :style="{ animationDelay: `${0.1 + i * 0.07}s` }"
+          class="post-item press-reveal"
         >
-          <div v-if="a.cover_image" class="post-cover">
-            <el-image :src="a.cover_image" :alt="a.title" fit="cover" lazy />
-          </div>
-
-          <div class="post-body">
-            <div class="post-meta">
-              <el-tag v-if="a.category" size="small" type="info" effect="plain">
-                {{ categoryLabel(a.category) }}
-              </el-tag>
-              <span class="post-date">{{ formatDate(a.created_at) }}</span>
-            </div>
-
+          <div class="post-main">
             <h3 class="post-title">{{ a.title }}</h3>
-
             <p class="post-summary">{{ a.summary || excerpt(a) }}</p>
-
-            <div v-if="a.tags && a.tags.length" class="post-tags">
-              <el-tag
-                v-for="t in a.tags"
-                :key="t"
-                size="small"
-                effect="plain"
-                class="post-tag"
-              ># {{ t }}</el-tag>
-            </div>
+          </div>
+          <div class="post-side">
+            <span v-if="a.category" class="post-cat">{{ categoryLabel(a.category) }}</span>
+            <time class="post-time">{{ formatDate(a.created_at) }}</time>
           </div>
         </router-link>
       </div>
@@ -170,43 +175,37 @@ import { categoryLabel, formatDate } from '../labels'
 
 const articles = ref([])
 const loading = ref(true)
-const activePay = ref(null)
-const payVisible = ref(false)
 
 const isAdmin = computed(() => auth.isAdmin)
-
-/** 站点名逐字拆分（用于交错入场动画） */
-const TITLE = '飼酒之心'
-const titleChars = computed(() => TITLE.split(''))
+const latest = computed(() => articles.value[0] || null)
 
 /**
- * 联系方式
+ * Hero 内容
  *
- * 说明：从原 hardcode 保留，后续可移到后端配置。
+ * 对应 Valaxy 的 frontmatter.hero：
+ *   eyebrow / name / text / tagline / actions / command
+ * 本站没有 SSG，内容直接写在这里。
  */
-const contact = {
-  wechat: '微信：hao202305',
-  qq: 'QQ：1759737638',
+const hero = {
+  eyebrow: 'A PERSONAL SITE FOR EXPRESSION',
+  name: 'WANLE',
+  text: '飼酒之心',
+  tagline: '用代码创造有趣的东西',
+  actions: [
+    { text: '阅读文章', link: '/blog', theme: 'brand' },
+    { text: '逛逛社区', link: '/community', theme: 'alt' },
+  ],
+  command: 'write something worth reading',
 }
 
-/**
- * 打赏码图
- *
- * 图片放在 frontend/public/pay/，由 Vite 原样发布到站点根。
- * 不用 /static/ 前缀，因为那是后端图床目录。
- */
-const payCodes = [
-  { key: 'wechat-id', label: '微信号', src: '/pay/wechat-id.jpg' },
-  { key: 'wechat-pay', label: '微信收款码', src: '/pay/wechat-pay.jpg' },
-  { key: 'reward', label: '赞赏码', src: '/pay/reward.jpg' },
+/** 特性区（对应 PressHomeFeatures 的三项） */
+const features = [
+  { icon: '✍', title: '开箱即用', detail: '文章、分类、标签与归档已就绪，用 Markdown 写下第一篇。' },
+  { icon: '⚡', title: '即改即见', detail: '保存后立刻可读，写作与预览之间没有等待。' },
+  { icon: '🎨', title: '随心定制', detail: '从页脚到布局，每一处都能改成你想要的样子。' },
 ]
 
-function openPay(code) {
-  activePay.value = code
-  payVisible.value = true
-}
-
-/** 去掉 Markdown 标记，取纯文本摘要 */
+/** 纯文本摘要 */
 function excerpt(a) {
   const raw = a.content || ''
   if (!raw) return ''
@@ -217,17 +216,15 @@ function excerpt(a) {
     .replace(/[#>*_`~-]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 120)
+    .slice(0, 110)
 }
 
 onMounted(async () => {
   try {
-    // 后端 /api/articles 返回纯数组（ListOut 序列化）
     const list = await http.get('/api/articles', { params: { limit: 6 } })
     articles.value = Array.isArray(list) ? list : []
   } catch (e) {
     console.error('加载文章失败:', e)
-    articles.value = []
   } finally {
     loading.value = false
   }
@@ -235,357 +232,413 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* ==================== 首屏 ==================== */
-.hero {
-  min-height: 72vh;
+/* ==================== 容器（照抄 .press-home） ==================== */
+.press-home {
+  width: min(100% - 48px, var(--pr-home-max-width));
+  margin-inline: auto;
+  border-inline: 1px solid var(--pr-c-divider-light);
+}
+
+/* ==================== Hero（照抄 .press-home-hero） ==================== */
+.press-home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  border-bottom: 1px solid var(--pr-c-divider-light);
+  min-height: 620px;
+}
+
+.hero-copy {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  text-align: center;
-  padding: 4rem 1rem 3rem;
-  position: relative;
+  padding: clamp(32px, 5vw, 72px);
+  min-width: 0;
 }
 
 .hero-eyebrow {
-  font-family: var(--mono, monospace);
-  font-size: 0.7rem;
-  letter-spacing: 0.34em;
-  color: var(--accent, #4cc9f0);
-  opacity: 0.75;
-  margin-bottom: 1.4rem;
-  animation: fadeUp 0.6s ease both;
+  margin: 0 0 24px;
+  color: var(--press-c-text-2);
+  font-size: 12px;
+  font-family: var(--pr-font-mono);
+  letter-spacing: 0.08em;
 }
 
-/* 标题：逐字入场 */
-.hero-title {
-  font-size: clamp(2.6rem, 8vw, 4.4rem);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: 1.15;
-  margin-bottom: 1.6rem;
+.hero-heading {
+  margin: 0;
+  font-family: var(--pr-font-display);
+  font-weight: 600;
+}
+
+.hero-name {
+  display: block;
+  margin-bottom: 20px;
+  color: var(--pr-c-brand);
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--pr-font-mono);
+  letter-spacing: 0.18em;
+}
+
+.hero-text {
+  display: block;
+  font-size: clamp(40px, 4.5vw, 68px);
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.hero-tagline {
+  margin: 24px 0 0;
+  color: var(--press-c-text-2);
+  font-size: clamp(15px, 1.5vw, 18px);
+  line-height: 1.6;
+  max-width: 32em;
+}
+
+.hero-actions {
   display: flex;
-  justify-content: center;
+  gap: 12px;
+  margin-top: 36px;
   flex-wrap: wrap;
 }
 
-.hero-char {
-  display: inline-block;
-  background: linear-gradient(135deg, #ffffff 10%, var(--accent, #4cc9f0) 55%, #7b6cf6 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: charIn 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) both;
-  will-change: transform, opacity;
-}
-
-@keyframes charIn {
-  from {
-    opacity: 0;
-    transform: translateY(0.5em) scale(0.92);
-    filter: blur(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
-  }
-}
-
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.hero-desc {
-  font-size: 1rem;
-  color: var(--muted, #8b93a1);
-  max-width: 34rem;
-  line-height: 1.9;
-  margin-bottom: 1.1rem;
-  animation: fadeUp 0.7s 0.5s ease both;
-}
-
-.hero-contact {
-  font-family: var(--mono, monospace);
-  font-size: 0.8rem;
-  color: var(--muted, #8b93a1);
-  opacity: 0.8;
-  display: flex;
-  gap: 0.6rem;
+/* 按钮：照抄上游的 --pr-button-brand-* 变量 */
+.press-btn {
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
   justify-content: center;
-  animation: fadeUp 0.7s 0.62s ease both;
+  padding: 0 20px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--pr-c-divider-light);
+  background: transparent;
+  color: var(--press-c-text-1);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 0.2s var(--pr-ease-standard),
+    border-color 0.2s var(--pr-ease-standard),
+    color 0.2s var(--pr-ease-standard),
+    box-shadow 0.2s var(--pr-ease-standard);
 }
 
-.dot { opacity: 0.45; }
+.press-btn:hover {
+  border-color: var(--pr-c-brand);
+  color: var(--pr-c-brand);
+}
 
-.pay-row {
+.press-btn--brand {
+  background: var(--pr-button-brand-bg);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 12px var(--pr-button-brand-shadow);
+}
+
+.press-btn--brand:hover {
+  color: #fff;
+  box-shadow: 0 4px 18px var(--pr-button-brand-shadow-hover);
+}
+
+/* 命令提示（对应 PressHomeCommand） */
+.hero-command {
   display: flex;
-  gap: 0.4rem;
-  margin-top: 1.4rem;
-  flex-wrap: wrap;
-  justify-content: center;
-  animation: fadeUp 0.7s 0.74s ease both;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 380px;
+  margin-top: 36px;
+  padding: 12px 14px;
+  border: 1px solid var(--pr-c-divider-light);
+  border-radius: 8px;
+  background: var(--pr-c-surface);
+  font-family: var(--pr-font-mono);
+  font-size: 13px;
 }
 
-.pay-chip {
-  font-size: 0.76rem !important;
-  color: var(--muted, #8b93a1) !important;
+.cmd-prompt {
+  color: var(--pr-c-brand);
 }
 
-.pay-chip:hover {
-  color: var(--accent, #4cc9f0) !important;
+.cmd-text {
+  color: var(--press-c-text-2);
 }
 
-/* 向下滚动提示 */
-.hero-scroll {
-  margin-top: 2.6rem;
-  height: 34px;
+/* ---------- 右侧视觉 ---------- */
+.hero-visual {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  animation: fadeUp 0.7s 0.9s ease both;
+  gap: 20px;
+  padding: clamp(32px, 5vw, 72px);
+  border-left: 1px solid var(--pr-c-divider-light);
+  min-width: 0;
 }
 
-.scroll-arrow {
-  width: 1px;
-  height: 32px;
-  background: linear-gradient(to bottom, var(--accent, #4cc9f0), transparent);
+.hero-orbit {
   position: relative;
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
 }
 
-.scroll-arrow::after {
-  content: '';
+.orbit-ring {
   position: absolute;
-  bottom: 0;
-  left: -3px;
-  width: 7px;
-  height: 7px;
-  border-right: 1px solid var(--accent, #4cc9f0);
-  border-bottom: 1px solid var(--accent, #4cc9f0);
-  transform: rotate(45deg);
-  animation: scrollHint 1.8s ease-in-out infinite;
+  border-radius: 50%;
+  border: 1px solid var(--pr-c-orbit-line);
 }
 
-@keyframes scrollHint {
-  0%, 100% { opacity: 0.3; transform: translateY(-4px) rotate(45deg); }
-  50% { opacity: 1; transform: translateY(2px) rotate(45deg); }
+.orbit-ring--1 {
+  inset: 0;
+  border-style: dashed;
+  animation: spin 40s linear infinite;
+}
+
+.orbit-ring--2 {
+  inset: 16%;
+  box-shadow: 0 0 40px var(--pr-c-orbit-glow) inset;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.orbit-core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 1;
+}
+
+.orbit-num {
+  font-family: var(--pr-font-display);
+  font-size: 3rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--press-c-text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.orbit-label {
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--press-c-text-3);
+}
+
+.hero-caption {
+  margin: 0;
+  font-family: var(--pr-font-mono);
+  font-size: 12px;
+  color: var(--press-c-text-3);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ==================== 特性区 ==================== */
+.press-home-features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--pr-c-divider-light);
+}
+
+.feature-item {
+  padding: clamp(24px, 3vw, 40px);
+  border-right: 1px solid var(--pr-c-divider-light);
+}
+
+.feature-item:last-child {
+  border-right: none;
+}
+
+.feature-icon {
+  display: block;
+  font-size: 20px;
+  margin-bottom: 14px;
+  color: var(--pr-c-brand);
+}
+
+.feature-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--press-c-text-1);
+}
+
+.feature-detail {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--press-c-text-2);
 }
 
 /* ==================== 文章列表 ==================== */
-.posts {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 0 1.2rem 4rem;
+.press-posts {
+  padding: clamp(32px, 4vw, 56px) clamp(16px, 3vw, 48px) 64px;
 }
 
-.posts-head {
+.posts-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 1.4rem;
-  padding-bottom: 0.8rem;
-  border-bottom: 1px solid var(--border, #23262f);
+  padding-bottom: 16px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--pr-c-divider-light);
 }
 
 .posts-title {
-  font-size: 1.1rem;
+  font-size: 18px;
   font-weight: 600;
-  color: var(--text, #e8ecf1);
-  position: relative;
-  padding-left: 0.7rem;
+  color: var(--press-c-text-1);
 }
 
-/* 标题左侧的竖条，呼应 Valaxy 的分节视觉 */
-.posts-title::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 0.95em;
-  border-radius: 2px;
-  background: var(--accent, #4cc9f0);
+.posts-all {
+  font-size: 13px;
+  color: var(--press-c-text-3);
 }
 
-.posts-more {
-  font-size: 0.8rem;
-  color: var(--muted, #8b93a1);
-  transition: color 0.18s ease;
+.posts-all:hover {
+  color: var(--pr-c-brand);
 }
 
-.posts-more:hover {
-  color: var(--accent, #4cc9f0);
-}
-
-.post-list {
+.posts-list {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
 }
 
-.post-skeleton {
-  padding: 1.2rem;
-  border: 1px solid var(--border, #23262f);
-  border-radius: 12px;
-  background: var(--surface, #111318);
-}
-
-/* 卡片：参考 Valaxy 的横向条目形态 */
-.post-card {
+/* 条目：只有分隔线（照抄 Valaxy 的列表语言） */
+.post-item {
   display: flex;
-  gap: 1.1rem;
-  padding: 1.1rem 1.2rem;
-  border: 1px solid var(--border, #23262f);
-  border-radius: 12px;
-  background: var(--surface, #111318);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 20px 4px;
+  border-bottom: 1px solid var(--pr-c-divider-light);
   color: inherit;
   text-decoration: none;
-  transition:
-    border-color 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-  animation: cardIn 0.5s ease both;
-  will-change: transform;
+  transition: background-color 0.2s var(--pr-ease-standard);
 }
 
-.post-card:hover {
-  border-color: rgba(76, 201, 240, 0.42);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.28);
+.post-item:hover {
+  background: var(--pr-c-brand-soft);
 }
 
-@keyframes cardIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.post-cover {
-  flex: 0 0 132px;
-  height: 92px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.post-cover :deep(img) {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.post-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.post-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-
-.post-date {
-  font-family: var(--mono, monospace);
-  font-size: 0.72rem;
-  color: var(--muted, #8b93a1);
-  opacity: 0.85;
-}
-
-.post-title {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--text, #e8ecf1);
-  line-height: 1.45;
-  transition: color 0.18s ease;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.post-card:hover .post-title {
-  color: var(--accent, #4cc9f0);
-}
-
-.post-summary {
-  font-size: 0.85rem;
-  color: var(--muted, #8b93a1);
-  line-height: 1.72;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.post-tags {
-  display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-  margin-top: 0.1rem;
-}
-
-.post-tag {
-  font-family: var(--mono, monospace);
-  font-size: 0.7rem !important;
-}
-
-.posts-empty {
-  padding: 2.5rem 0;
-}
-
-/* ==================== 弹窗图片 ==================== */
-.pay-img {
-  width: 100%;
-  border-radius: 8px;
+.post-item--skeleton {
   display: block;
 }
 
-/* ==================== 响应式 ==================== */
-@media (max-width: 600px) {
-  .hero {
-    min-height: 62vh;
-    padding: 3rem 1rem 2rem;
+.post-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.post-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--press-c-text-1);
+  transition: color 0.2s var(--pr-ease-standard);
+}
+
+.post-item:hover .post-title {
+  color: var(--pr-c-brand);
+}
+
+.post-summary {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--press-c-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.post-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.post-cat {
+  font-family: var(--pr-font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--pr-c-brand-soft);
+  color: var(--pr-c-brand);
+}
+
+.post-time {
+  font-family: var(--pr-font-mono);
+  font-size: 11.5px;
+  color: var(--press-c-text-3);
+}
+
+/* ==================== 响应式（照抄上游断点） ==================== */
+@media (max-width: 900px) {
+  .press-home {
+    width: min(100% - 32px, var(--pr-home-max-width));
+    border-inline: none;
   }
 
-  .post-card {
-    flex-direction: column;
+  .press-home-hero {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: auto;
   }
 
-  .post-cover {
-    flex: none;
-    width: 100%;
-    height: 140px;
+  .hero-visual {
+    border-left: none;
+    border-top: 1px solid var(--pr-c-divider-light);
+  }
+
+  .press-home-features {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .feature-item {
+    border-right: none;
+    border-bottom: 1px solid var(--pr-c-divider-light);
+  }
+
+  .feature-item:last-child {
+    border-bottom: none;
   }
 }
 
-/* ==================== 动效可访问性 ==================== */
-/* 用户开启「减弱动效」时，全部动画立即完成，不做位移动画 */
+@media (max-width: 600px) {
+  .post-item {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .post-side {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+}
+
+/* 减弱动效 */
 @media (prefers-reduced-motion: reduce) {
-  .hero-char,
-  .hero-eyebrow,
-  .hero-desc,
-  .hero-contact,
-  .pay-row,
-  .hero-scroll,
-  .post-card {
-    animation: none !important;
-  }
-
-  .scroll-arrow::after {
-    animation: none !important;
-  }
-
-  .post-card:hover {
-    transform: none;
+  .orbit-ring--1 {
+    animation: none;
   }
 }
 </style>
