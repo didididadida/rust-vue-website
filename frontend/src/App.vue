@@ -7,7 +7,7 @@
       <div class="header-inner">
         <router-link to="/" class="logo">
           <span class="logo-mark">飼</span>
-          <span class="logo-text">wanle</span>
+          <span class="logo-text">飼酒の小站</span>
         </router-link>
 
         <!-- 移动端菜单按钮 -->
@@ -59,7 +59,7 @@
 
     <footer class="footer">
       <div class="footer-inner">
-        <p class="footer-line">© {{ year }} wanle · 用代码创造有趣的东西 <span class="heart">♥</span></p>
+        <p class="footer-line">© {{ year }} 飼酒の小站 · All at sea. <span class="heart">♥</span></p>
       </div>
     </footer>
   </div>
