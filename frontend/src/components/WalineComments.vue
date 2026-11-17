@@ -127,8 +127,22 @@ function pathOf(slug) {
 const EMOJI_CDN = 'https://unpkg.com/@waline/emojis@1.2.0/'
 const EMOJI_TYPES = ['bilibili', 'qq', 'weibo']
 
+/**
+ * 返回表情目录路径（**不带 info.json**）
+ *
+ * 为什么不能带 info.json：
+ *   Waline 客户端内部对每个表情源做 `${url}/info.json` 拼接。
+ *   若我们传入的 URL 已含 info.json，实际请求会变成
+ *     .../bilibili/info.json/info.json  → 404
+ *   → JSON.parse 失败 → 抛 Failed to fetch → 整个评论组件渲染中断。
+ *
+ * 证据：
+ *   @waline/client@3.16.2 的 dist/waline.js 里有：
+ *     `${e}/info.json`
+ *   即客户端会自己补这个后缀。
+ */
 function getEmojis() {
-  return EMOJI_TYPES.map((t) => `${EMOJI_CDN}${t}/info.json`)
+  return EMOJI_TYPES.map((t) => `${EMOJI_CDN}${t}/`)
 }
 
 let instance = null
